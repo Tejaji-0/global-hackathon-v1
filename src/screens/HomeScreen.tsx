@@ -11,13 +11,14 @@ import {
   ActivityIndicator,
   Animated,
   Easing,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { FlatList } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../contexts/AuthContext';
-import { useLinks } from '../hooks/useCloudSync';
+import { useLinks, useCollections } from '../hooks/useCloudSync';
 import { Link } from '../types';
 
 const { width } = Dimensions.get('window');
@@ -59,6 +60,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps): React.React
     refreshLinks, 
     getCategories 
   } = useLinks();
+  const { collections, addLinkToCollection } = useCollections();
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   
@@ -149,6 +151,42 @@ export default function HomeScreen({ navigation }: HomeScreenProps): React.React
 
   const handleViewAllLinks = (): void => {
     navigation.navigate('Search');
+  };
+
+  const handleAddToCollection = (link: Link): void => {
+    if (collections.length === 0) {
+      Alert.alert(
+        'No Collections',
+        'You don\'t have any collections yet. Create a collection first.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Create Collection', onPress: () => navigation.navigate('Collections') }
+        ]
+      );
+      return;
+    }
+
+    Alert.alert(
+      'Add to Collection',
+      'Choose a collection to add this link to:',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        ...collections.map(collection => ({
+          text: collection.name,
+          onPress: async () => {
+            try {
+              const linkId = parseInt(link.id);
+              const collectionId = parseInt(collection.id);
+              await addLinkToCollection(linkId, collectionId);
+              Alert.alert('Success', `Added "${link.title}" to "${collection.name}"`);
+            } catch (error) {
+              console.error('❌ Error adding link to collection:', error);
+              Alert.alert('Error', 'Failed to add link to collection');
+            }
+          }
+        }))
+      ]
+    );
   };
 
   const renderCategoryFilter = (): React.ReactElement => (
@@ -243,6 +281,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps): React.React
       <TouchableOpacity
         style={styles.linkCard}
         onPress={() => handleLinkPress(item)}
+        onLongPress={() => handleAddToCollection(item)}
         activeOpacity={0.8}
       >
       <View style={styles.linkImageContainer}>
@@ -290,9 +329,21 @@ export default function HomeScreen({ navigation }: HomeScreenProps): React.React
               </View>
             ))}
           </View>
-          <Text style={styles.linkDate}>
-            {new Date(item.created_at).toLocaleDateString()}
-          </Text>
+          <View style={styles.linkActions}>
+            <Text style={styles.linkDate}>
+              {new Date(item.created_at).toLocaleDateString()}
+            </Text>
+            <TouchableOpacity
+              style={styles.collectionButton}
+              onPress={(e) => {
+                e.stopPropagation();
+                handleAddToCollection(item);
+              }}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Ionicons name="folder-outline" size={16} color="#6366f1" />
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
     </TouchableOpacity>
@@ -637,6 +688,16 @@ const styles = StyleSheet.create({
   linkDate: {
     fontSize: 12,
     color: '#9ca3af',
+  },
+  linkActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  collectionButton: {
+    padding: 4,
+    borderRadius: 6,
+    backgroundColor: 'rgba(99, 102, 241, 0.1)',
   },
   emptyContainer: {
     alignItems: 'center',

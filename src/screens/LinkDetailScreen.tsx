@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -13,7 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as WebBrowser from 'expo-web-browser';
 import { Link } from '../types';
-import { useLinks } from '../hooks/useCloudSync';
+import { useLinks, useCollections } from '../hooks/useCloudSync';
 
 interface LinkDetailScreenProps {
   route: {
@@ -29,6 +29,7 @@ interface LinkDetailScreenProps {
   };
   navigation: {
     goBack: () => void;
+    navigate: (screen: string, params?: any) => void;
   };
 }
 
@@ -42,6 +43,7 @@ interface ActionButton {
 export default function LinkDetailScreen({ route, navigation }: LinkDetailScreenProps): React.ReactElement {
   const { link } = route.params;
   const { deleteLink } = useLinks();
+  const { collections, addLinkToCollection } = useCollections();
 
   const handleOpenLink = async (): Promise<void> => {
     try {
@@ -63,12 +65,46 @@ export default function LinkDetailScreen({ route, navigation }: LinkDetailScreen
   };
 
   const handleAddToCollection = (): void => {
+    if (collections.length === 0) {
+      Alert.alert(
+        'No Collections',
+        'You don\'t have any collections yet. Create collections from the Collections screen to organize your links.',
+        [
+          { text: 'Go to Collections', onPress: () => navigation.navigate('Collections') },
+          { text: 'Cancel', style: 'cancel' }
+        ]
+      );
+      return;
+    }
+
+    // Show collection selection
+    const collectionButtons = collections.map(collection => ({
+      text: collection.name,
+      onPress: async () => {
+        try {
+          const linkId = parseInt(link.id);
+          const collectionId = parseInt(collection.id);
+          
+          await addLinkToCollection(linkId, collectionId);
+          Alert.alert(
+            'Success!',
+            `Link added to "${collection.name}" collection.`
+          );
+        } catch (error) {
+          console.error('Error adding link to collection:', error);
+          Alert.alert(
+            'Error',
+            'Failed to add link to collection. Please try again.'
+          );
+        }
+      }
+    }));
+
     Alert.alert(
       'Add to Collection',
-      'Choose how to add this link to a collection:',
+      'Select a collection to add this link to:',
       [
-        { text: 'Create New Collection', onPress: () => Alert.alert('Feature Coming Soon', 'Create collection feature will be available soon!') },
-        { text: 'Add to Existing', onPress: () => Alert.alert('Feature Coming Soon', 'Select existing collection feature will be available soon!') },
+        ...collectionButtons,
         { text: 'Cancel', style: 'cancel' }
       ]
     );

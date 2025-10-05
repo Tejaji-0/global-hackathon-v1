@@ -1,0 +1,31 @@
+{
+  "expo": {
+    "name": "LinkHive",
+    "slug": "linkhive",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "sdkVersion": "54.0.0",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#6366f1"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.linkhive.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#6366f1"
+      },
+      "package": "com.linkhive.app"
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "scheme": "linkhive"
+  }
+}

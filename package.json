@@ -1,27 +1,67 @@
 {
-  "name": "acta-hackathon-starter",
+  "name": "linkhive",
   "version": "1.0.0",
-  "description": "ACTA 24-hour Global Hackathon starter repository",
-  "type": "module",
-  "main": "index.js",
+  "description": "LinkHive - AI-powered content organizer and discovery platform",
+  "main": "node_modules/expo/AppEntry.js",
   "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web",
     "verify": "node verify-submission.js",
-    "start": "echo 'Add your start command here!'",
-    "test": "echo 'Add your test command here!'"
+    "test": "jest"
   },
   "keywords": [
-    "hackathon",
-    "acta",
-    "starter"
+    "react-native",
+    "expo",
+    "ai",
+    "content-organizer",
+    "bookmarks",
+    "links"
   ],
-  "author": "ACTA Studios",
+  "author": "LinkHive Team",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/actastudios/global-hackathon-v1"
   },
   "dependencies": {
-    "puppeteer": "^24.23.0",
-    "xlsx": "^0.18.5"
-  }
+    "@expo/metro-runtime": "~6.1.2",
+    "@expo/vector-icons": "^15.0.2",
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "@react-navigation/bottom-tabs": "^6.6.1",
+    "@react-navigation/native": "^6.1.18",
+    "@react-navigation/stack": "^6.4.1",
+    "@supabase/supabase-js": "^2.45.4",
+    "expo": "~54.0.0",
+    "expo-clipboard": "~8.0.7",
+    "expo-constants": "~18.0.9",
+    "expo-linear-gradient": "~15.0.7",
+    "expo-sharing": "~14.0.7",
+    "expo-status-bar": "~3.0.8",
+    "expo-web-browser": "~15.0.8",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "react-native": "0.81.4",
+    "react-native-elements": "^3.4.3",
+    "react-native-gesture-handler": "~2.28.0",
+    "react-native-paper": "^5.12.3",
+    "react-native-reanimated": "~4.1.1",
+    "react-native-safe-area-context": "~5.6.0",
+    "react-native-screens": "~4.16.0",
+    "react-native-svg": "15.12.1",
+    "react-native-url-polyfill": "^2.0.0",
+    "react-native-web": "^0.21.0",
+    "react-native-worklets": "^0.5.1",
+    "resolve-from": "^5.0.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.20.0",
+    "@types/react": "~19.1.10",
+    "@types/react-native": "^0.72.8",
+    "jest": "^29.2.1",
+    "jest-expo": "^54.0.12",
+    "typescript": "^5.9.3"
+  },
+  "private": true
 }

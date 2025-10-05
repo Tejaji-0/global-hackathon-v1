@@ -27,7 +27,6 @@ import { AuthProvider, useAuth } from './src/contexts/AuthContext';
 // Import screens
 import AuthScreen from './src/screens/AuthScreen';
 import HomeScreen from './src/screens/HomeScreen';
-import CollectionsScreen from './src/screens/CollectionsScreen';
 import SearchScreen from './src/screens/SearchScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 import AddLinkScreen from './src/screens/AddLinkScreen';
@@ -105,8 +104,6 @@ function MainTabs(): React.ReactElement {
 
           if (route.name === 'Home') {
             iconName = focused ? 'home' : 'home-outline';
-          } else if (route.name === 'Collections') {
-            iconName = focused ? 'library' : 'library-outline';
           } else if (route.name === 'Search') {
             iconName = focused ? 'search' : 'search-outline';
           } else if (route.name === 'Profile') {
@@ -143,7 +140,6 @@ function MainTabs(): React.ReactElement {
       })}
     >
       <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen name="Collections" component={CollectionsScreen} />
       <Tab.Screen name="Search" component={SearchScreen} />
       <Tab.Screen name="Profile" component={ProfileScreen} />
     </Tab.Navigator>

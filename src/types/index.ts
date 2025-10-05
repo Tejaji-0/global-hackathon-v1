@@ -103,7 +103,6 @@ export type RootStackParamList = {
 export type BottomTabParamList = {
   Home: undefined;
   Search: undefined;
-  Collections: undefined;
   Profile: undefined;
 };
 

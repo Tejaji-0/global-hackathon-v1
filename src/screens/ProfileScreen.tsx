@@ -217,21 +217,34 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps): React
           ))}
         </View>
 
-        {/* AI Features Section */}
+        {/* AI Insights Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>AI Features</Text>
+          <Text style={styles.sectionTitle}>AI Insights</Text>
           
           <View style={styles.aiCard}>
             <View style={styles.aiCardHeader}>
               <Ionicons name="sparkles" size={24} color="#6366f1" />
-              <Text style={styles.aiCardTitle}>AI Assistant</Text>
+              <Text style={styles.aiCardTitle}>Smart Analysis</Text>
             </View>
             <Text style={styles.aiCardText}>
-              Your AI has analyzed {userStats.totalLinks} links and created {userStats.collections} smart categories
+              Your AI has analyzed {userStats.totalLinks} out of {userStats.totalLinks > 0 ? userStats.totalLinks - 1 : 0} links and created {userStats.collections} smart categories
             </Text>
-            <TouchableOpacity style={styles.aiCardButton}>
-              <Text style={styles.aiCardButtonText}>View AI Insights</Text>
-            </TouchableOpacity>
+            
+            {/* AI Insights Display */}
+            <View style={styles.insightsContainer}>
+              <View style={styles.insightItem}>
+                <Ionicons name="trending-up" size={18} color="#10b981" />
+                <Text style={styles.insightText}>Most active this week</Text>
+              </View>
+              <View style={styles.insightItem}>
+                <Ionicons name="bulb" size={18} color="#f59e0b" />
+                <Text style={styles.insightText}>Learning content 40%</Text>
+              </View>
+              <View style={styles.insightItem}>
+                <Ionicons name="code-slash" size={18} color="#8b5cf6" />
+                <Text style={styles.insightText}>Development resources 35%</Text>
+              </View>
+            </View>
           </View>
         </View>
 
@@ -422,16 +435,23 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginBottom: 12,
   },
-  aiCardButton: {
-    backgroundColor: '#f3f4f6',
-    borderRadius: 8,
-    padding: 12,
-    alignItems: 'center',
+  insightsContainer: {
+    marginTop: 12,
   },
-  aiCardButtonText: {
+  insightItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#f8fafc',
+    borderRadius: 8,
+    marginBottom: 6,
+  },
+  insightText: {
     fontSize: 14,
-    color: '#6366f1',
-    fontWeight: '600',
+    color: '#4b5563',
+    marginLeft: 10,
+    fontWeight: '500',
   },
   signOutButton: {
     flexDirection: 'row',

@@ -249,7 +249,7 @@ This project demonstrates:
 
 - **GitHub**: [Tejaji-0/global-hackathon-v1](https://github.com/Tejaji-0/global-hackathon-v1)
 - **Demo Video**: [Coming Soon]
-- **Live Demo**: [Expo App]
+- **Live Demo**: exp:\nxt-m_w-tejaji-0-8081.exp.direct
 
 Built with ❤️ for the ACTA Global Hackathon 2025
 

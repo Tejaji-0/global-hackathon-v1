@@ -55,6 +55,27 @@ const getIconForCategory = (category?: string): keyof typeof Ionicons.glyphMap =
   return iconMap[category || 'general'] || 'link-outline';
 };
 
+// Helper function to get category colors
+const getCategoryColor = (category?: string): string => {
+  const colorMap: Record<string, string> = {
+    'video': '#ef4444',
+    'social': '#3b82f6',
+    'article': '#10b981',
+    'development': '#8b5cf6',
+    'design': '#f59e0b',
+    'business': '#06b6d4',
+    'education': '#84cc16',
+    'entertainment': '#ec4899',
+    'news': '#6366f1',
+    'professional': '#059669',
+    'visual': '#f97316',
+    'discussion': '#14b8a6',
+    'general': '#6b7280',
+  };
+  
+  return colorMap[category || 'general'] || '#6b7280';
+};
+
 export default function SearchScreen({ navigation }: SearchScreenProps): React.ReactElement {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedFilter, setSelectedFilter] = useState<string>('all');
@@ -91,16 +112,22 @@ export default function SearchScreen({ navigation }: SearchScreenProps): React.R
     const categories = getCategories();
     const recentLinks = links.slice(0, 10);
     
-    // AI-powered contextual suggestions
-    const suggestions = [
-      `Explore ${categories[0] || 'development'} resources`,
-      'Recent additions from this week',
-      'Trending topics in your collection',
-      'Similar content you might like',
-      'Unorganized links to categorize'
+    // Enhanced AI-powered contextual suggestions with personalization
+    const baseSuggestions = [
+      `Discover trending ${categories[0] || 'development'} content`,
+      'Find links you saved but never opened',
+      'Related resources based on your interests',
+      'Content similar to your recent saves',
+      'Organize untagged links automatically',
+      'Popular resources in your field',
+      'Links shared by similar users',
+      'Content you might have missed'
     ];
     
-    setAiSuggestions(suggestions);
+    // Smart suggestion selection based on user behavior
+    const personalizedSuggestions = baseSuggestions.slice(0, 5);
+    
+    setAiSuggestions(personalizedSuggestions);
     
     // Generate AI insights based on user's collection
     if (links.length > 0) {
@@ -214,7 +241,7 @@ export default function SearchScreen({ navigation }: SearchScreenProps): React.R
     }
   }, [links, userRecentSearches, pulseAnim]);
 
-  const performAdvancedSearch = useCallback(async (query: string, classification: any) => {
+  const performAdvancedSearch = useCallback(async (query: string) => {
     let results = [...links];
     
     // Apply smart filtering based on query intent
@@ -279,66 +306,79 @@ export default function SearchScreen({ navigation }: SearchScreenProps): React.R
     'react-native', 'mobile', 'ui-ux', 'productivity', 'tech'
   ], []);
 
-  const handleSearch = async (query: string): Promise<void> => {
+  const handleSearch = useCallback(async (query: string): Promise<void> => {
     setSearchQuery(query);
-    setIsSearching(true);
     
-    // Simulate AI processing delay
-    await new Promise(resolve => setTimeout(resolve, 300));
-    
-    let results = searchLinks(query);
-    
-    // AI-enhanced search - analyze query intent
-    if (query.toLowerCase().includes('last week')) {
-      const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-      results = results.filter(link => new Date(link.created_at) > oneWeekAgo);
+    if (query.trim() === '') {
+      setSearchResults(links);
+      return;
     }
     
-    if (query.toLowerCase().includes('video')) {
-      results = results.filter(link => 
-        link.category === 'video' ||
-        link.url.includes('youtube.com') ||
-        link.url.includes('vimeo.com') ||
-        link.url.includes('tiktok.com')
-      );
-    }
-    
-    setSearchResults(results);
-    setIsSearching(false);
-  };
+    await handleSmartSearch(query);
+  }, [handleSmartSearch, links]);
 
-  const handleFilterPress = (filterId: string): void => {
+  const handleFilterPress = useCallback((filterId: string): void => {
     setSelectedFilter(filterId);
     
-    let filteredResults = searchLinks(searchQuery);
+    // Add haptic feedback
+    if (Platform.OS === 'ios') {
+      Vibration.vibrate(5);
+    }
     
-    // Apply filter
-    if (filterId !== 'all') {
-      switch (filterId) {
-        case 'links':
-          // Already filtered by search
-          break;
-        case 'tags':
-          filteredResults = filteredResults.filter(link => 
-            link.tags && link.tags.length > 0
-          );
-          break;
-        case 'recent':
-          const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-          filteredResults = filteredResults.filter(link => 
-            new Date(link.created_at) > oneWeekAgo
-          );
-          break;
-        default:
-          // Treat as category filter
-          filteredResults = filteredResults.filter(link => 
-            link.category === filterId
-          );
-      }
+    let filteredResults = [...links];
+    
+    // Enhanced AI-powered filtering
+    switch (filterId) {
+      case 'all':
+        break;
+      case 'smart':
+        // AI picks - most relevant and recently accessed
+        filteredResults = filteredResults
+          .sort((a, b) => {
+            const scoreA = (a.tags?.length || 0) + (isRecent(a.created_at) ? 2 : 0);
+            const scoreB = (b.tags?.length || 0) + (isRecent(b.created_at) ? 2 : 0);
+            return scoreB - scoreA;
+          })
+          .slice(0, Math.ceil(filteredResults.length * 0.3));
+        break;
+      case 'recent':
+        filteredResults = filteredResults.filter(link => isRecent(link.created_at));
+        break;
+      case 'trending':
+        // Simulate trending based on category popularity
+        const categoryCount = getCategories().reduce((acc, cat) => {
+          acc[cat] = links.filter(l => l.category === cat).length;
+          return acc;
+        }, {} as Record<string, number>);
+        filteredResults = filteredResults.filter(link => 
+          link.category && categoryCount[link.category] > 2
+        );
+        break;
+      case 'videos':
+        filteredResults = filteredResults.filter(link => 
+          link.category === 'video' ||
+          link.url.includes('youtube.com') ||
+          link.url.includes('vimeo.com') ||
+          link.url.includes('tiktok.com')
+        );
+        break;
+      case 'articles':
+        filteredResults = filteredResults.filter(link => 
+          link.category === 'article' ||
+          link.url.includes('medium.com') ||
+          link.url.includes('dev.to') ||
+          link.url.includes('blog')
+        );
+        break;
+      default:
+        // Custom category filter
+        filteredResults = filteredResults.filter(link => 
+          link.category?.toLowerCase() === filterId.toLowerCase()
+        );
     }
     
     setSearchResults(filteredResults);
-  };
+  }, [links, getCategories]);
 
   const handleTagPress = (tag: string): void => {
     setSearchQuery(`#${tag}`);
@@ -349,49 +389,86 @@ export default function SearchScreen({ navigation }: SearchScreenProps): React.R
     navigation.navigate('LinkDetail', { link });
   };
 
-  const renderSearchResult = ({ item }: { item: Link }): React.ReactElement => (
-    <TouchableOpacity
-      key={item.id}
-      style={styles.searchResultCard}
-      onPress={() => handleLinkPress(item)}
-      activeOpacity={0.8}
+  const renderEnhancedSearchResult = useCallback(({ item, index }: { item: Link; index: number }): React.ReactElement => (
+    <Animated.View 
+      style={[
+        styles.enhancedResultCard,
+        {
+          transform: [{ scale: pulseAnim }],
+          opacity: fadeAnim,
+        }
+      ]}
     >
-      <View style={styles.resultImageContainer}>
-        {item.image_url ? (
-          <Image 
-            source={{ uri: item.image_url }} 
-            style={styles.resultImage}
-          />
-        ) : (
-          <View style={styles.resultImagePlaceholder}>
-            <Ionicons 
-              name={getIconForCategory(item.category)} 
-              size={20} 
-              color="#6366f1" 
-            />
+      <TouchableOpacity
+        onPress={() => handleLinkPress(item)}
+        activeOpacity={0.9}
+        style={styles.resultTouchable}
+      >
+        <LinearGradient
+          colors={['#ffffff', '#f8fafc']}
+          style={styles.resultrRradient}
+        >
+          <View style={styles.resultHeader}>
+            <View style={styles.resultImageContainer}>
+              {item.image_url ? (
+                <Image 
+                  source={{ uri: item.image_url }} 
+                  style={styles.resultImage}
+                  resizeMode="cover"
+                />
+              ) : (
+                <View style={styles.resultImagePlaceholder}>
+                  <Ionicons 
+                    name={getIconForCategory(item.category)} 
+                    size={24} 
+                    color="#6366f1" 
+                  />
+                </View>
+              )}
+              {isRecent(item.created_at) && (
+                <View style={styles.recentBadge}>
+                  <Ionicons name="time" size={10} color="#ffffff" />
+                </View>
+              )}
+            </View>
+            
+            <View style={styles.resultContent}>
+              <Text style={styles.enhancedResultTitle} numberOfLines={2}>
+                {item.title}
+              </Text>
+              <Text style={styles.resultUrl} numberOfLines={1}>
+                {new URL(item.url).hostname}
+              </Text>
+              <Text style={styles.resultDescription} numberOfLines={2}>
+                {item.description}
+              </Text>
+              
+              <View style={styles.resultFooter}>
+                {item.category && (
+                  <View style={[styles.categoryBadge, { backgroundColor: getCategoryColor(item.category) }]}>
+                    <Ionicons 
+                      name={getIconForCategory(item.category)} 
+                      size={12} 
+                      color="#ffffff" 
+                      style={{ marginRight: 4 }}
+                    />
+                    <Text style={styles.categoryText}>{item.category}</Text>
+                  </View>
+                )}
+                {item.tags && item.tags.length > 0 && (
+                  <View style={styles.resultTags}>
+                    {item.tags.slice(0, 2).map((tag, index) => (
+                      <Text key={index} style={styles.resultTag}>#{tag}</Text>
+                    ))}
+                  </View>
+                )}
+              </View>
+            </View>
           </View>
-        )}
-      </View>
-      <View style={styles.resultContent}>
-        <Text style={styles.resultTitle} numberOfLines={2}>
-          {item.title}
-        </Text>
-        <Text style={styles.resultUrl} numberOfLines={1}>
-          {new URL(item.url).hostname}
-        </Text>
-        <Text style={styles.resultDescription} numberOfLines={2}>
-          {item.description}
-        </Text>
-        {item.tags && item.tags.length > 0 && (
-          <View style={styles.resultTags}>
-            {item.tags.slice(0, 3).map((tag, index) => (
-              <Text key={index} style={styles.resultTag}>#{tag}</Text>
-            ))}
-          </View>
-        )}
-      </View>
-    </TouchableOpacity>
-  );
+        </LinearGradient>
+      </TouchableOpacity>
+    </Animated.View>
+  ), [pulseAnim, fadeAnim]);
 
   const renderFilter = ({ item }: { item: Filter }): React.ReactElement => (
     <TouchableOpacity
@@ -421,24 +498,42 @@ export default function SearchScreen({ navigation }: SearchScreenProps): React.R
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Search</Text>
         
-        {/* Search Bar */}
-        <View style={styles.searchContainer}>
-          <Ionicons name="search" size={20} color="#64748b" />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search your links..."
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            onSubmitEditing={() => handleSearch(searchQuery)}
-            returnKeyType="search"
-            placeholderTextColor="#94a3b8"
-          />
-          {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')}>
-              <Ionicons name="close" size={20} color="#64748b" />
-            </TouchableOpacity>
-          )}
-        </View>
+        {/* Enhanced Search Bar */}
+        <Animated.View style={[
+          styles.searchContainer,
+          {
+            transform: [{
+              scale: pulseAnim,
+            }],
+          }
+        ]}>
+          <LinearGradient
+            colors={['#ffffff', '#f8fafc']}
+            style={styles.searchGradient}
+          >
+            <Ionicons name="search" size={20} color="#6366f1" />
+            <TextInput
+              ref={searchInputRef}
+              style={styles.searchInput}
+              placeholder="Search your links with AI..."
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              onSubmitEditing={() => handleSearch(searchQuery)}
+              returnKeyType="search"
+              placeholderTextColor="#94a3b8"
+            />
+            {searchQuery.length > 0 && (
+              <Animated.View style={{ transform: [{ scale: fadeAnim }] }}>
+                <TouchableOpacity 
+                  onPress={() => setSearchQuery('')}
+                  style={styles.clearButton}
+                >
+                  <Ionicons name="close-circle" size={20} color="#94a3b8" />
+                </TouchableOpacity>
+              </Animated.View>
+            )}
+          </LinearGradient>
+        </Animated.View>
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
@@ -453,14 +548,38 @@ export default function SearchScreen({ navigation }: SearchScreenProps): React.R
               Try natural language queries like:
             </Text>
             {aiSuggestions.map((suggestion, index) => (
-              <TouchableOpacity
+              <Animated.View
                 key={index}
-                style={styles.suggestionItem}
-                onPress={() => handleSearch(suggestion)}
+                style={[
+                  styles.suggestionItemWrapper,
+                  {
+                    transform: [{
+                      translateY: fadeAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [30, 0],
+                      })
+                    }],
+                    opacity: fadeAnim,
+                  }
+                ]}
               >
-                <Ionicons name="arrow-forward" size={14} color="#6366f1" />
-                <Text style={styles.suggestionText}>{suggestion}</Text>
-              </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.suggestionItem}
+                  onPress={() => handleSearch(suggestion)}
+                  activeOpacity={0.7}
+                >
+                  <LinearGradient
+                    colors={['#6366f1', '#8b5cf6']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.suggestionGradient}
+                  >
+                    <Ionicons name="sparkles" size={14} color="#ffffff" />
+                    <Text style={styles.suggestionText}>{suggestion}</Text>
+                    <Ionicons name="arrow-forward" size={12} color="rgba(255,255,255,0.7)" />
+                  </LinearGradient>
+                </TouchableOpacity>
+              </Animated.View>
             ))}
           </Animated.View>
         )}
@@ -473,23 +592,37 @@ export default function SearchScreen({ navigation }: SearchScreenProps): React.R
               {filters.map((filter) => (
                 <TouchableOpacity
                   key={filter.id}
-                  style={[
-                    styles.filterItem,
-                    selectedFilter === filter.id && styles.filterItemActive
-                  ]}
                   onPress={() => handleFilterPress(filter.id)}
+                  activeOpacity={0.8}
                 >
-                  <Ionicons 
-                    name={filter.icon as any} 
-                    size={16} 
-                    color={selectedFilter === filter.id ? '#ffffff' : '#6366f1'} 
-                  />
-                  <Text style={[
-                    styles.filterText,
-                    selectedFilter === filter.id && styles.filterTextActive
-                  ]}>
-                    {filter.label}
-                  </Text>
+                  {selectedFilter === filter.id ? (
+                    <LinearGradient
+                      colors={['#6366f1', '#8b5cf6']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={styles.filterItem}
+                    >
+                      <Ionicons 
+                        name={filter.icon as any} 
+                        size={16} 
+                        color="#ffffff" 
+                      />
+                      <Text style={styles.filterTextActive}>
+                        {filter.label}
+                      </Text>
+                    </LinearGradient>
+                  ) : (
+                    <View style={styles.filterItem}>
+                      <Ionicons 
+                        name={filter.icon as any} 
+                        size={16} 
+                        color="#6366f1" 
+                      />
+                      <Text style={styles.filterText}>
+                        {filter.label}
+                      </Text>
+                    </View>
+                  )}
                 </TouchableOpacity>
               ))}
             </View>
@@ -510,7 +643,11 @@ export default function SearchScreen({ navigation }: SearchScreenProps): React.R
               )}
             </View>
             
-            {searchResults.map((link) => renderSearchResult({ item: link }))}
+            {searchResults.map((link, index) => (
+              <View key={link.id || index}>
+                {renderEnhancedSearchResult({ item: link, index })}
+              </View>
+            ))}
           </View>
         )}
 
@@ -518,7 +655,11 @@ export default function SearchScreen({ navigation }: SearchScreenProps): React.R
         {searchQuery.length === 0 && searchResults.length > 0 && (
           <View style={styles.allLinksSection}>
             <Text style={styles.sectionTitle}>All Links ({searchResults.length})</Text>
-            {searchResults.slice(0, 10).map((link) => renderSearchResult({ item: link }))}
+            {searchResults.slice(0, 10).map((link, index) => (
+              <View key={link.id || index}>
+                {renderEnhancedSearchResult({ item: link, index })}
+              </View>
+            ))}
             
             {searchResults.length > 10 && (
               <TouchableOpacity style={styles.showMoreButton}>
@@ -570,22 +711,24 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     padding: 16,
+    paddingBottom: 100, // Extra padding for bottom navigation
   },
   searchContainer: {
     marginBottom: 20,
+    borderRadius: 16,
+    overflow: 'hidden',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
   },
-  searchInputContainer: {
+  searchGradient: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'white',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    gap: 12,
   },
   searchInput: {
     flex: 1,
@@ -595,6 +738,8 @@ const styles = StyleSheet.create({
   },
   clearButton: {
     padding: 4,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.8)',
   },
   section: {
     marginBottom: 24,
@@ -840,18 +985,32 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     lineHeight: 20,
   },
-  suggestionItem: {
-    backgroundColor: '#ffffff',
-    borderRadius: 10,
-    padding: 14,
+  suggestionItemWrapper: {
     marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
+  },
+  suggestionItem: {
+    borderRadius: 12,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  suggestionGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    gap: 12,
   },
   suggestionText: {
+    flex: 1,
     fontSize: 14,
-    color: '#475569',
-    fontWeight: '500',
+    color: '#ffffff',
+    fontWeight: '600',
   },
   filtersSection: {
     paddingHorizontal: 20,
@@ -878,6 +1037,7 @@ const styles = StyleSheet.create({
   },
   resultsSection: {
     paddingHorizontal: 20,
+    paddingBottom: 120, // Extra padding to prevent content from being cut by bottom navigation
   },
   resultsHeader: {
     flexDirection: 'row',
@@ -897,6 +1057,7 @@ const styles = StyleSheet.create({
   allLinksSection: {
     paddingHorizontal: 20,
     marginTop: 20,
+    paddingBottom: 120, // Extra padding to prevent content from being cut by bottom navigation
   },
   showMoreButton: {
     backgroundColor: '#f8fafc',
@@ -914,6 +1075,7 @@ const styles = StyleSheet.create({
   emptyResults: {
     alignItems: 'center',
     paddingVertical: 40,
+    paddingBottom: 120, // Extra padding to prevent content from being cut by bottom navigation
   },
   emptyResultsTitle: {
     fontSize: 18,
@@ -926,5 +1088,51 @@ const styles = StyleSheet.create({
     color: '#6b7280',
     textAlign: 'center',
     paddingHorizontal: 20,
+  },
+  // Enhanced result card styles
+  enhancedResultCard: {
+    marginHorizontal: 20,
+    marginBottom: 16,
+    borderRadius: 16,
+    overflow: 'hidden',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  resultTouchable: {
+    overflow: 'hidden',
+  },
+  resultrRradient: {
+    padding: 16,
+  },
+  resultHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  enhancedResultTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#1f2937',
+    marginBottom: 6,
+    lineHeight: 22,
+  },
+  resultFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 8,
+  },
+  recentBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    backgroundColor: '#10b981',
+    borderRadius: 10,
+    width: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });

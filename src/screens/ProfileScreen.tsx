@@ -304,6 +304,7 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+    paddingBottom: 100, // Extra padding for bottom navigation
   },
   statsContainer: {
     flexDirection: 'row',

@@ -340,6 +340,7 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     padding: 16,
+    paddingBottom: 100, // Extra padding for bottom navigation
   },
   previewCard: {
     backgroundColor: 'white',

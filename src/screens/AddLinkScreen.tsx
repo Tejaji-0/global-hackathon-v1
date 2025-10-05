@@ -402,6 +402,7 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     padding: 20,
+    paddingBottom: 100, // Extra padding for bottom navigation
   },
   section: {
     marginBottom: 24,

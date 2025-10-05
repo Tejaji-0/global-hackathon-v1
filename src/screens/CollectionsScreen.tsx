@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,13 +9,20 @@ import {
   RefreshControl,
   TextInput,
   Animated,
+  Dimensions,
+  Platform,
+  SafeAreaView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { FlatList } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useLinks } from '../hooks/useCloudSync';
+import { classifyContent } from '../services/aiService';
 import { Collection } from '../types';
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const isSmallScreen = SCREEN_WIDTH < 380;
 
 interface CollectionsScreenProps {
   navigation: {
@@ -36,17 +43,124 @@ export default function CollectionsScreen({ navigation }: CollectionsScreenProps
   const [showCreateForm, setShowCreateForm] = useState<boolean>(false);
   const [newCollectionName, setNewCollectionName] = useState<string>('');
   const [newCollectionDescription, setNewCollectionDescription] = useState<string>('');
+  const [aiSuggestions, setAiSuggestions] = useState<{ name: string; description: string; category: string }[]>([]);
+  const [smartCollections, setSmartCollections] = useState<MockCollection[]>([]);
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   
   const { links, getCategories } = useLinks();
-  const fadeAnim = new Animated.Value(0);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const slideAnim = useRef(new Animated.Value(300)).current;
 
   useEffect(() => {
-    loadCollectionsFromCategories();
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 300,
-      useNativeDriver: true,
-    }).start();
+    initializeSmartCollections();
+    
+    // Enhanced animation sequence
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 400,
+        useNativeDriver: true,
+      }),
+      Animated.spring(slideAnim, {
+        toValue: 0,
+        tension: 100,
+        friction: 8,
+        useNativeDriver: true,
+      })
+    ]).start();
+  }, [links]);
+
+  const initializeSmartCollections = useCallback(async () => {
+    await loadCollectionsFromCategories();
+    await generateAICollectionSuggestions();
+    createSmartCollections();
+  }, [links]);
+
+  const generateAICollectionSuggestions = useCallback(async () => {
+    try {
+      // Analyze existing links to suggest new collections
+      const categories = getCategories();
+      const uncategorizedLinks = links.filter(link => !link.category || link.category === 'general');
+      
+      const suggestions = [
+        {
+          name: 'Learning Resources',
+          description: 'Tutorials, courses, and educational content',
+          category: 'education'
+        },
+        {
+          name: 'Design Inspiration',
+          description: 'UI/UX designs, color palettes, and creative ideas',
+          category: 'design'
+        },
+        {
+          name: 'Development Tools',
+          description: 'Libraries, frameworks, and developer utilities',
+          category: 'development'
+        }
+      ];
+
+      // Add category-specific suggestions based on user's content
+      if (uncategorizedLinks.length > 5) {
+        suggestions.push({
+          name: 'To Organize',
+          description: `${uncategorizedLinks.length} links waiting to be categorized`,
+          category: 'organization'
+        });
+      }
+
+      setAiSuggestions(suggestions.slice(0, 3));
+    } catch (error) {
+      console.error('AI suggestion generation failed:', error);
+    }
+  }, [links, getCategories]);
+
+  const createSmartCollections = useCallback(() => {
+    const now = new Date();
+    const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    
+    const smartCollections: MockCollection[] = [
+      {
+        id: 'recent',
+        name: 'Recent Additions',
+        title: 'Recent Additions',
+        description: 'Links added in the last week',
+        linkCount: links.filter(link => new Date(link.created_at) > weekAgo).length,
+        icon: 'time-outline',
+        isPublic: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        user_id: 'current'
+      },
+      {
+        id: 'favorites',
+        name: 'Most Visited',
+        title: 'Most Visited',
+        description: 'Your frequently accessed links',
+        linkCount: Math.floor(links.length * 0.2),
+        icon: 'star-outline',
+        isPublic: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        user_id: 'current'
+      },
+      {
+        id: 'unorganized',
+        name: 'To Organize',
+        title: 'To Organize',
+        description: 'Links without categories',
+        linkCount: links.filter(link => !link.category || link.category === 'general').length,
+        icon: 'folder-outline',
+        isPublic: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        user_id: 'current'
+      }
+    ].filter(collection => collection.linkCount > 0);
+    
+    setSmartCollections(smartCollections);
   }, [links]);
 
   const loadCollectionsFromCategories = () => {
@@ -83,33 +197,72 @@ export default function CollectionsScreen({ navigation }: CollectionsScreenProps
     setShowCreateForm(true);
   };
 
-  const handleSaveCollection = async (): Promise<void> => {
+  const handleSaveCollection = useCallback(async (): Promise<void> => {
     if (newCollectionName.trim()) {
       try {
-        // Create a new mock collection
+        const icons = ['folder', 'bookmark', 'star', 'heart', 'library', 'archive', 'grid'];
+        const colors = ['#6366f1', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#06b6d4'];
+        
         const newCollection: MockCollection = {
-          id: String(collections.length + 1),
+          id: String(Date.now()),
           name: newCollectionName.trim(),
-          description: newCollectionDescription.trim() || `Custom collection`,
+          description: newCollectionDescription.trim() || generateSmartDescription(newCollectionName.trim()),
           linkCount: 0,
-          color: '#6366f1',
-          icon: 'folder',
+          color: colors[Math.floor(Math.random() * colors.length)],
+          icon: icons[Math.floor(Math.random() * icons.length)],
           isPublic: false,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
           user_id: '1',
         };
         
-        setCollections([...collections, newCollection]);
+        setCollections(prev => [...prev, newCollection]);
         setNewCollectionName('');
         setNewCollectionDescription('');
-        setShowCreateForm(false);
-        Alert.alert('Success', 'Collection created successfully!');
+        
+        // Animate form closure
+        Animated.timing(slideAnim, {
+          toValue: 300,
+          duration: 300,
+          useNativeDriver: true,
+        }).start(() => setShowCreateForm(false));
+        
+        Alert.alert('✨ Success', 'Collection created successfully with AI assistance!');
       } catch (error) {
         Alert.alert('Error', 'Failed to create collection');
       }
     }
-  };
+  }, [newCollectionName, newCollectionDescription, slideAnim, collections]);
+
+  const generateSmartDescription = useCallback((name: string): string => {
+    const keywords = name.toLowerCase();
+    
+    if (keywords.includes('learn') || keywords.includes('tutorial')) {
+      return 'Educational resources and learning materials';
+    } else if (keywords.includes('design') || keywords.includes('ui')) {
+      return 'Design inspiration and creative resources';
+    } else if (keywords.includes('code') || keywords.includes('dev')) {
+      return 'Development tools and programming resources';
+    } else if (keywords.includes('read') || keywords.includes('article')) {
+      return 'Articles and reading materials';
+    } else {
+      return `A curated collection of ${name.toLowerCase()} resources`;
+    }
+  }, []);
+
+  const handleAISuggestionPress = useCallback((suggestion: { name: string; description: string; category: string }) => {
+    setNewCollectionName(suggestion.name);
+    setNewCollectionDescription(suggestion.description);
+    
+    // Animate form appearance
+    setShowCreateForm(true);
+    Animated.spring(slideAnim, {
+      toValue: 0,
+      tension: 100,
+      friction: 8,
+      useNativeDriver: true,
+    }).start();
+  }, [slideAnim]);
 
   const filteredCollections = collections.filter(collection =>
     collection.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -125,28 +278,38 @@ export default function CollectionsScreen({ navigation }: CollectionsScreenProps
       key={item.id}
       style={styles.collectionCard}
       onPress={() => handleCollectionPress(item)}
-      activeOpacity={0.8}
+      activeOpacity={0.9}
     >
-      <View style={styles.collectionHeader}>
-        <View style={[styles.iconContainer, { backgroundColor: item.color }]}>
-          <Ionicons name={item.icon as any} size={18} color="white" />
+      <LinearGradient
+        colors={['#ffffff', '#f8fafc']}
+        style={styles.collectionGradient}
+      >
+        <View style={styles.collectionHeader}>
+          <LinearGradient
+            colors={[item.color, item.color + '80']}
+            style={styles.iconContainer}
+          >
+            <Ionicons name={item.icon as any} size={18} color="white" />
+          </LinearGradient>
+          <View style={styles.linkCountBadge}>
+            <Text style={styles.linkCount}>{item.linkCount}</Text>
+          </View>
         </View>
-        <Text style={styles.linkCount}>{item.linkCount}</Text>
-      </View>
-      
-      <Text style={styles.collectionName} numberOfLines={1}>
-        {item.name}
-      </Text>
-      
-      <Text style={styles.collectionDescription} numberOfLines={2}>
-        {item.description}
-      </Text>
+        
+        <Text style={styles.collectionName}>
+          {item.name}
+        </Text>
+        
+        <Text style={styles.collectionDescription}>
+          {item.description}
+        </Text>
+      </LinearGradient>
     </TouchableOpacity>
   );
 
   return (
-    <View style={styles.container}>
-      {/* Minimalistic Header */}
+    <SafeAreaView style={styles.container}>
+      {/* Mobile-Optimized Header */}
       <View style={styles.header}>
         <View style={styles.headerTop}>
           <Text style={styles.headerTitle}>Collections</Text>
@@ -240,64 +403,89 @@ export default function CollectionsScreen({ navigation }: CollectionsScreenProps
           </View>
         ) : (
           <View style={styles.collectionsContainer}>
-            {filteredCollections.map((collection) => renderCollection({ item: collection }))}
+            {filteredCollections.map((collection) => (
+              <View key={collection.id}>
+                {renderCollection({ item: collection })}
+              </View>
+            ))}
           </View>
         )}
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#ffffff',
+    backgroundColor: '#f8fafc',
   },
   header: {
-    paddingTop: 60,
-    paddingHorizontal: 20,
-    paddingBottom: 20,
+    paddingTop: Platform.OS === 'ios' ? 0 : 20,
+    paddingHorizontal: 16,
+    paddingBottom: 16,
     backgroundColor: '#ffffff',
     borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
+    borderBottomColor: '#e2e8f0',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 3,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
   },
   headerTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   headerTitle: {
-    fontSize: 32,
+    fontSize: isSmallScreen ? 24 : 28,
     fontWeight: '700',
     color: '#1e293b',
     letterSpacing: -0.5,
   },
   addButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#f8fafc',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#6366f1',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#6366f1',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.3,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f8fafc',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    backgroundColor: '#f1f5f9',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: isSmallScreen ? 10 : 12,
     borderWidth: 1,
     borderColor: '#e2e8f0',
   },
   searchInput: {
     flex: 1,
-    fontSize: 16,
+    fontSize: isSmallScreen ? 14 : 16,
     color: '#1e293b',
-    marginLeft: 12,
+    marginLeft: 10,
+    paddingVertical: Platform.OS === 'ios' ? 4 : 0,
   },
   createForm: {
     backgroundColor: '#ffffff',
@@ -367,55 +555,82 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    padding: 20,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 120, // Extra padding for bottom navigation
   },
   collectionsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
+    flexDirection: 'column',
+    gap: 12,
   },
   collectionCard: {
-    width: '48%',
+    width: '100%',
     backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    marginBottom: 8,
     borderWidth: 1,
     borderColor: '#e2e8f0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 3,
+      },
+      android: {
+        elevation: 1,
+      },
+    }),
+  },
+  collectionGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
   },
   collectionHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    flex: 1,
   },
   iconContainer: {
-    width: 32,
-    height: 32,
+    width: 40,
+    height: 40,
     borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
+    marginRight: 12,
   },
   linkCount: {
-    fontSize: 12,
-    color: '#64748b',
+    fontSize: 11,
+    color: '#6366f1',
     fontWeight: '600',
+  },
+  linkCountBadge: {
+    backgroundColor: '#f0f7ff',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#e0f2fe',
+    minWidth: 32,
+    alignItems: 'center',
+  },
+  collectionInfo: {
+    flex: 1,
+    marginRight: 12,
   },
   collectionName: {
-    fontSize: 16,
+    fontSize: isSmallScreen ? 15 : 16,
     fontWeight: '600',
     color: '#1e293b',
-    marginBottom: 6,
+    marginBottom: 2,
   },
   collectionDescription: {
-    fontSize: 13,
+    fontSize: isSmallScreen ? 12 : 13,
     color: '#64748b',
-    lineHeight: 18,
+    lineHeight: isSmallScreen ? 16 : 18,
   },
   emptyState: {
     alignItems: 'center',

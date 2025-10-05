@@ -342,15 +342,14 @@ export class CloudSyncService {
 
   static async deleteCollection(collectionId: string, userId: string): Promise<{ error: Error | null }> {
     try {
-      // First delete all links in the collection
-      const { error: linksError } = await supabase
-        .from(TABLES.LINKS)
+      // First delete all collection-link relationships
+      const { error: linkRelationsError } = await supabase
+        .from(TABLES.COLLECTION_LINKS)
         .delete()
-        .eq('collection_id', collectionId)
-        .eq('user_id', userId);
+        .eq('collection_id', collectionId);
 
-      if (linksError) {
-        return { error: linksError as Error };
+      if (linkRelationsError) {
+        return { error: linkRelationsError as Error };
       }
 
       // Then delete the collection

@@ -17,7 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { FlatList } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { useLinks } from '../hooks/useCloudSync';
+import { useLinks, useCollections } from '../hooks/useCloudSync';
 import { classifyContent } from '../services/aiService';
 import { Collection } from '../types';
 
@@ -38,8 +38,6 @@ interface MockCollection extends Collection {
 }
 
 export default function CollectionsScreen({ navigation }: CollectionsScreenProps): React.ReactElement {
-  const [collections, setCollections] = useState<MockCollection[]>([]);
-  const [refreshing, setRefreshing] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [showCreateForm, setShowCreateForm] = useState<boolean>(false);
   const [newCollectionName, setNewCollectionName] = useState<string>('');
@@ -49,6 +47,17 @@ export default function CollectionsScreen({ navigation }: CollectionsScreenProps
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   
   const { links, getCategories } = useLinks();
+  const { 
+    collections, 
+    loading: collectionsLoading, 
+    error: collectionsError, 
+    syncing, 
+    createCollection, 
+    deleteCollection,
+    refreshCollections 
+  } = useCollections();
+  
+  const [refreshing, setRefreshing] = useState<boolean>(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const slideAnim = useRef(new Animated.Value(300)).current;
@@ -73,7 +82,7 @@ export default function CollectionsScreen({ navigation }: CollectionsScreenProps
   }, [links]);
 
   const initializeSmartCollections = useCallback(async () => {
-    await loadCollectionsFromCategories();
+    generateSmartCollections();
     await generateAICollectionSuggestions();
     createSmartCollections();
   }, [links]);
@@ -164,9 +173,10 @@ export default function CollectionsScreen({ navigation }: CollectionsScreenProps
     setSmartCollections(smartCollections);
   }, [links]);
 
-  const loadCollectionsFromCategories = () => {
+  // This function now just generates smart collections
+  const generateSmartCollections = () => {
     const categories = getCategories();
-    const realCollectionsFromData: MockCollection[] = categories.map((category, index) => {
+    const smartCollectionsFromData: MockCollection[] = categories.map((category, index) => {
       const categoryLinks = links.filter(link => link.category === category);
       const colors = ['#6366f1', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#ec4899'];
       const icons = ['grid', 'code-slash', 'color-palette', 'bulb', 'rocket', 'library', 'star'];
@@ -214,14 +224,24 @@ export default function CollectionsScreen({ navigation }: CollectionsScreenProps
       };
     }).filter(collection => collection.linkCount > 0); // Only show collections with links
 
-    console.log(`📚 Loaded ${realCollectionsFromData.length} collections from real data`);
-    setCollections(realCollectionsFromData);
+    console.log(`📚 Generated ${smartCollectionsFromData.length} smart collections from categories`);
+    setSmartCollections(smartCollectionsFromData);
   };
 
-  const onRefresh = (): void => {
+  const onRefresh = async (): Promise<void> => {
     setRefreshing(true);
-    loadCollectionsFromCategories();
-    setRefreshing(false);
+    try {
+      console.log('🔄 CollectionsScreen: Manual refresh triggered');
+      console.log('📊 Current collections count:', collections.length);
+      console.log('🔄 Calling refreshCollections...');
+      await refreshCollections();
+      console.log('📊 Collections after refresh:', collections.length);
+      generateSmartCollections();
+    } catch (error) {
+      console.error('❌ Error refreshing collections:', error);
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const handleCreateCollection = (): void => {
@@ -231,23 +251,15 @@ export default function CollectionsScreen({ navigation }: CollectionsScreenProps
   const handleSaveCollection = useCallback(async (): Promise<void> => {
     if (newCollectionName.trim()) {
       try {
-        const icons = ['folder', 'bookmark', 'star', 'heart', 'library', 'archive', 'grid'];
-        const colors = ['#6366f1', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#06b6d4'];
-        
-        const newCollection: MockCollection = {
-          id: String(Date.now()),
+        const { data, error } = await createCollection({
           name: newCollectionName.trim(),
           description: newCollectionDescription.trim() || generateSmartDescription(newCollectionName.trim()),
-          linkCount: 0,
-          color: colors[Math.floor(Math.random() * colors.length)],
-          icon: icons[Math.floor(Math.random() * icons.length)],
-          isPublic: false,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          user_id: '1',
-        };
+        });
         
-        setCollections(prev => [...prev, newCollection]);
+        if (error) {
+          throw error;
+        }
+        
         setNewCollectionName('');
         setNewCollectionDescription('');
         
@@ -258,12 +270,91 @@ export default function CollectionsScreen({ navigation }: CollectionsScreenProps
           useNativeDriver: true,
         }).start(() => setShowCreateForm(false));
         
-        Alert.alert('✨ Success', 'Collection created successfully with AI assistance!');
+        Alert.alert('✨ Success', 'Collection created successfully!');
       } catch (error) {
+        console.error('Error creating collection:', error);
         Alert.alert('Error', 'Failed to create collection');
       }
     }
-  }, [newCollectionName, newCollectionDescription, slideAnim, collections]);
+  }, [newCollectionName, newCollectionDescription, slideAnim, createCollection]);
+
+  const handleCreateAICollection = useCallback(async (): Promise<void> => {
+    try {
+      // Generate AI-powered collection suggestions based on user's links
+      const categories = getCategories();
+      const uncategorizedLinks = links.filter(link => !link.category || link.category === 'general');
+      
+      const aiCollections = [
+        {
+          name: 'Learning Resources',
+          description: 'Curated educational content and tutorials for skill development',
+          suggested: true
+        },
+        {
+          name: 'Design Inspiration',
+          description: 'Creative designs, UI/UX patterns, and visual inspiration',
+          suggested: true
+        },
+        {
+          name: 'Development Tools',
+          description: 'Programming resources, libraries, and developer utilities',
+          suggested: true
+        },
+        {
+          name: 'Reading List',
+          description: 'Articles, blogs, and long-form content for later reading',
+          suggested: true
+        },
+        {
+          name: 'Quick Reference',
+          description: 'Documentation, cheat sheets, and reference materials',
+          suggested: true
+        }
+      ];
+
+      // Add category-specific suggestions
+      if (uncategorizedLinks.length > 3) {
+        aiCollections.push({
+          name: 'To Organize',
+          description: `${uncategorizedLinks.length} uncategorized links ready for organization`,
+          suggested: true
+        });
+      }
+
+      // Show selection dialog
+      Alert.alert(
+        '🤖 AI Collection Suggestions',
+        'Choose a collection to create based on your content:',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          ...aiCollections.slice(0, 4).map(collection => ({
+            text: collection.name,
+            onPress: async () => {
+              try {
+                console.log('🤖 Creating AI-suggested collection:', collection);
+                const { data, error } = await createCollection({
+                  name: collection.name,
+                  description: collection.description,
+                });
+                
+                if (error) {
+                  throw error;
+                }
+                
+                Alert.alert('✨ AI Success', `Created "${collection.name}" collection with AI assistance!`);
+              } catch (error) {
+                console.error('❌ Error creating AI collection:', error);
+                Alert.alert('Error', 'Failed to create AI collection');
+              }
+            }
+          }))
+        ]
+      );
+    } catch (error) {
+      console.error('❌ Error generating AI collections:', error);
+      Alert.alert('Error', 'Failed to generate AI collection suggestions');
+    }
+  }, [links, getCategories, createCollection]);
 
   const generateSmartDescription = useCallback((name: string): string => {
     const keywords = name.toLowerCase();
@@ -295,9 +386,28 @@ export default function CollectionsScreen({ navigation }: CollectionsScreenProps
     }).start();
   }, [slideAnim]);
 
-  const filteredCollections = collections.filter(collection =>
+  // Convert real collections to display format
+  const convertToDisplayCollection = useCallback((collection: Collection): MockCollection => {
+    const icons = ['folder', 'bookmark', 'star', 'heart', 'library', 'archive', 'grid'];
+    const colors = ['#6366f1', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#ec4899'];
+    
+    // Calculate link count for this collection (for now, just use 0)
+    const linkCount = 0; // TODO: Get actual link count from collection_links table
+    
+    return {
+      ...collection,
+      linkCount,
+      icon: icons[Math.abs(collection.name.length) % icons.length],
+      color: colors[Math.abs(collection.name.length) % colors.length],
+      isPublic: false,
+    };
+  }, []);
+
+  const displayCollections = collections.map(convertToDisplayCollection);
+  
+  const filteredCollections = displayCollections.filter(collection =>
     collection.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    collection.description.toLowerCase().includes(searchQuery.toLowerCase())
+    (collection.description && collection.description.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
   const handleCollectionPress = (collection: MockCollection): void => {
@@ -326,35 +436,70 @@ export default function CollectionsScreen({ navigation }: CollectionsScreenProps
     });
   };
 
+  const handleDeleteCollection = useCallback(async (collection: MockCollection): Promise<void> => {
+    Alert.alert(
+      'Delete Collection',
+      `Are you sure you want to delete "${collection.name}"? This action cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const { error } = await deleteCollection(collection.id);
+              if (error) {
+                throw error;
+              }
+              Alert.alert('Success', 'Collection deleted successfully');
+            } catch (error) {
+              console.error('Error deleting collection:', error);
+              Alert.alert('Error', 'Failed to delete collection');
+            }
+          }
+        }
+      ]
+    );
+  }, [deleteCollection]);
+
   const renderCollection = ({ item }: { item: MockCollection }): React.ReactElement => (
-    <TouchableOpacity
-      key={item.id}
-      style={styles.collectionCard}
-      onPress={() => handleCollectionPress(item)}
-      activeOpacity={0.7}
-    >
-      <View style={styles.collectionHeader}>
-        <LinearGradient
-          colors={[item.color, item.color + '80']}
-          style={styles.iconContainer}
-        >
-          <Ionicons name={item.icon as any} size={20} color="white" />
-        </LinearGradient>
-        
-        <View style={styles.collectionInfo}>
-          <Text style={styles.collectionName} numberOfLines={1}>
-            {item.name}
-          </Text>
-          <Text style={styles.collectionDescription} numberOfLines={2}>
-            {item.description}
-          </Text>
+    <View key={item.id} style={styles.collectionCard}>
+      <TouchableOpacity
+        style={styles.collectionContent}
+        onPress={() => handleCollectionPress(item)}
+        activeOpacity={0.7}
+      >
+        <View style={styles.collectionHeader}>
+          <LinearGradient
+            colors={[item.color || '#6366f1', (item.color || '#6366f1') + '80']}
+            style={styles.iconContainer}
+          >
+            <Ionicons name={item.icon as any} size={20} color="white" />
+          </LinearGradient>
+          
+          <View style={styles.collectionInfo}>
+            <Text style={styles.collectionName} numberOfLines={1}>
+              {item.name}
+            </Text>
+            <Text style={styles.collectionDescription} numberOfLines={2}>
+              {item.description || 'No description'}
+            </Text>
+          </View>
+          
+          <View style={styles.linkCountBadge}>
+            <Text style={styles.linkCount}>{item.linkCount}</Text>
+          </View>
         </View>
-        
-        <View style={styles.linkCountBadge}>
-          <Text style={styles.linkCount}>{item.linkCount}</Text>
-        </View>
-      </View>
-    </TouchableOpacity>
+      </TouchableOpacity>
+      
+      <TouchableOpacity
+        style={styles.deleteButton}
+        onPress={() => handleDeleteCollection(item)}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+      >
+        <Ionicons name="trash-outline" size={18} color="#ef4444" />
+      </TouchableOpacity>
+    </View>
   );
 
   return (
@@ -363,9 +508,14 @@ export default function CollectionsScreen({ navigation }: CollectionsScreenProps
       <View style={styles.header}>
         <View style={styles.headerTop}>
           <Text style={styles.headerTitle}>Collections</Text>
-          <TouchableOpacity onPress={handleCreateCollection} style={styles.addButton}>
-            <Ionicons name="add" size={20} color="white" />
-          </TouchableOpacity>
+          <View style={styles.headerButtons}>
+            <TouchableOpacity onPress={handleCreateAICollection} style={styles.aiButton}>
+              <Ionicons name="sparkles" size={18} color="white" />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={handleCreateCollection} style={styles.addButton}>
+              <Ionicons name="add" size={20} color="white" />
+            </TouchableOpacity>
+          </View>
         </View>
         
         {/* Search Bar */}
@@ -443,12 +593,77 @@ export default function CollectionsScreen({ navigation }: CollectionsScreenProps
               }
             </Text>
             {!searchQuery && (
-              <TouchableOpacity
-                style={styles.emptyStateButton}
-                onPress={handleCreateCollection}
-              >
-                <Text style={styles.emptyStateButtonText}>Create Collection</Text>
-              </TouchableOpacity>
+              <View style={styles.emptyStateActions}>
+                <TouchableOpacity
+                  style={styles.emptyStateButton}
+                  onPress={handleCreateCollection}
+                >
+                  <Text style={styles.emptyStateButtonText}>Create Collection</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={styles.aiSuggestionButton}
+                  onPress={handleCreateAICollection}
+                >
+                  <Ionicons name="sparkles" size={16} color="white" />
+                  <Text style={styles.aiSuggestionButtonText}>AI Suggestions</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+            
+            {!searchQuery && filteredCollections.length === 0 && (
+              <View style={styles.aiSuggestionCards}>
+                <Text style={styles.suggestionTitle}>🤖 AI Suggestions</Text>
+                <View style={styles.suggestionGrid}>
+                  <TouchableOpacity 
+                    style={styles.suggestionCard}
+                    onPress={() => handleAISuggestionPress({
+                      name: 'Learning Resources', 
+                      description: 'Educational content and tutorials',
+                      category: 'education'
+                    })}
+                  >
+                    <Ionicons name="school" size={20} color="#6366f1" />
+                    <Text style={styles.suggestionName}>Learning Resources</Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity 
+                    style={styles.suggestionCard}
+                    onPress={() => handleAISuggestionPress({
+                      name: 'Design Inspiration', 
+                      description: 'UI/UX designs and creative ideas',
+                      category: 'design'
+                    })}
+                  >
+                    <Ionicons name="color-palette" size={20} color="#8b5cf6" />
+                    <Text style={styles.suggestionName}>Design Inspiration</Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity 
+                    style={styles.suggestionCard}
+                    onPress={() => handleAISuggestionPress({
+                      name: 'Development Tools', 
+                      description: 'Programming resources and utilities',
+                      category: 'development'
+                    })}
+                  >
+                    <Ionicons name="code-slash" size={20} color="#10b981" />
+                    <Text style={styles.suggestionName}>Dev Tools</Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity 
+                    style={styles.suggestionCard}
+                    onPress={() => handleAISuggestionPress({
+                      name: 'Reading List', 
+                      description: 'Articles and long-form content',
+                      category: 'reading'
+                    })}
+                  >
+                    <Ionicons name="library" size={20} color="#f59e0b" />
+                    <Text style={styles.suggestionName}>Reading List</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
             )}
           </View>
         ) : (
@@ -501,6 +716,10 @@ const styles = StyleSheet.create({
     color: '#1e293b',
     letterSpacing: -0.5,
   },
+  headerButtons: {
+    flexDirection: 'row',
+    gap: 8,
+  },
   addButton: {
     width: 36,
     height: 36,
@@ -511,6 +730,25 @@ const styles = StyleSheet.create({
     ...Platform.select({
       ios: {
         shadowColor: '#6366f1',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.3,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
+  },
+  aiButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#8b5cf6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#8b5cf6',
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.3,
         shadowRadius: 4,
@@ -624,11 +862,11 @@ const styles = StyleSheet.create({
     width: '100%',
     backgroundColor: '#ffffff',
     borderRadius: 12,
-    paddingVertical: 16,
-    paddingHorizontal: 16,
     marginBottom: 8,
     borderWidth: 1,
     borderColor: '#e2e8f0',
+    flexDirection: 'row',
+    alignItems: 'center',
     ...Platform.select({
       ios: {
         shadowColor: '#000',
@@ -640,6 +878,15 @@ const styles = StyleSheet.create({
         elevation: 1,
       },
     }),
+  },
+  collectionContent: {
+    flex: 1,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+  },
+  deleteButton: {
+    padding: 12,
+    marginRight: 8,
   },
   collectionGradient: {
     flexDirection: 'row',

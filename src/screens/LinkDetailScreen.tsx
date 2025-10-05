@@ -13,7 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as WebBrowser from 'expo-web-browser';
 import { Link } from '../types';
-import { useLinks, useCollections } from '../hooks/useCloudSync';
+import { useLinks } from '../hooks/useCloudSync';
 
 interface LinkDetailScreenProps {
   route: {
@@ -43,7 +43,7 @@ interface ActionButton {
 export default function LinkDetailScreen({ route, navigation }: LinkDetailScreenProps): React.ReactElement {
   const { link } = route.params;
   const { deleteLink } = useLinks();
-  const { collections, addLinkToCollection } = useCollections();
+
 
   const handleOpenLink = async (): Promise<void> => {
     try {
@@ -64,51 +64,7 @@ export default function LinkDetailScreen({ route, navigation }: LinkDetailScreen
     }
   };
 
-  const handleAddToCollection = (): void => {
-    if (collections.length === 0) {
-      Alert.alert(
-        'No Collections',
-        'You don\'t have any collections yet. Create collections from the Collections screen to organize your links.',
-        [
-          { text: 'Go to Collections', onPress: () => navigation.navigate('Collections') },
-          { text: 'Cancel', style: 'cancel' }
-        ]
-      );
-      return;
-    }
 
-    // Show collection selection
-    const collectionButtons = collections.map(collection => ({
-      text: collection.name,
-      onPress: async () => {
-        try {
-          const linkId = parseInt(link.id);
-          const collectionId = parseInt(collection.id);
-          
-          await addLinkToCollection(linkId, collectionId);
-          Alert.alert(
-            'Success!',
-            `Link added to "${collection.name}" collection.`
-          );
-        } catch (error) {
-          console.error('Error adding link to collection:', error);
-          Alert.alert(
-            'Error',
-            'Failed to add link to collection. Please try again.'
-          );
-        }
-      }
-    }));
-
-    Alert.alert(
-      'Add to Collection',
-      'Select a collection to add this link to:',
-      [
-        ...collectionButtons,
-        { text: 'Cancel', style: 'cancel' }
-      ]
-    );
-  };
 
   const handleDeleteLink = (): void => {
     Alert.alert(
@@ -154,12 +110,7 @@ export default function LinkDetailScreen({ route, navigation }: LinkDetailScreen
       onPress: handleShareLink,
       color: '#10b981',
     },
-    {
-      icon: 'library-outline',
-      label: 'Collection',
-      onPress: handleAddToCollection,
-      color: '#8b5cf6',
-    },
+
     {
       icon: 'trash-outline',
       label: 'Delete',

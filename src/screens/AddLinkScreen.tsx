@@ -16,6 +16,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Clipboard from 'expo-clipboard';
 import { extractOpenGraphData } from '../services/openGraphService';
 import { classifyContent } from '../services/aiService';
+import { AutoCollectionService } from '../services/autoCollectionService';
 import { useAuth } from '../contexts/AuthContext';
 import { useLinks, useCollections } from '../hooks/useCloudSync';
 import { Link, Collection } from '../types';
@@ -246,9 +247,33 @@ export default function AddLinkScreen({ navigation }: AddLinkScreenProps): React
 
       console.log('✅ Link saved successfully with ID:', data.id);
 
-      // Step 3: Add to selected collections if any
+      // Step 3: Auto-collection assignment (if no manual selections made)
+      let autoCollectionResult = null;
+      if (selectedCollections.length === 0) {
+        console.log('🤖 Attempting auto-collection assignment...');
+        try {
+          autoCollectionResult = await AutoCollectionService.processLinkForAutoCollection(
+            {
+              url: linkData.url,
+              title: linkData.title,
+              description: linkData.description,
+              userId: user.id
+            },
+            collections.map(c => ({ id: c.id, name: c.name, user_id: c.user_id }))
+          );
+          
+          if (autoCollectionResult.collectionId) {
+            await addLinkToCollection(parseInt(data.id), parseInt(autoCollectionResult.collectionId));
+            console.log('✅ Auto-assigned to collection:', autoCollectionResult.collectionName);
+          }
+        } catch (autoError) {
+          console.error('⚠️ Auto-collection failed (non-critical):', autoError);
+        }
+      }
+
+      // Step 4: Add to manually selected collections if any
       if (selectedCollections.length > 0) {
-        console.log(`📚 Adding link to ${selectedCollections.length} collections...`);
+        console.log(`📚 Adding link to ${selectedCollections.length} manually selected collections...`);
         
         for (const collectionId of selectedCollections) {
           try {
@@ -261,9 +286,14 @@ export default function AddLinkScreen({ navigation }: AddLinkScreenProps): React
         }
       }
 
-      const successMessage = selectedCollections.length > 0 
-        ? `Link saved successfully and added to ${selectedCollections.length} collection(s)!`
-        : 'Link saved successfully!';
+      let successMessage = 'Link saved successfully!';
+      
+      if (selectedCollections.length > 0) {
+        successMessage = `Link saved successfully and added to ${selectedCollections.length} collection(s)!`;
+      } else if (autoCollectionResult?.collectionId) {
+        const wasCreated = autoCollectionResult.wasCreated ? ' (auto-created)' : '';
+        successMessage = `Link saved and auto-assigned to "${autoCollectionResult.collectionName}"${wasCreated}!`;
+      }
 
       Alert.alert(
         'Success!',

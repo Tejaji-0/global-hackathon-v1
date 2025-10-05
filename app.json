@@ -26,6 +26,12 @@
     "web": {
       "bundler": "metro"
     },
-    "scheme": "linkhive"
+    "scheme": "linkhive",
+    "extra": {
+      "eas": {
+        "projectId": "37eeee35-2702-45c2-96dd-2f0dbbdd2f09"
+      }
+    },
+    "owner": "tejaji-0"
   }
 }

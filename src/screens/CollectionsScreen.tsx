@@ -17,9 +17,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { FlatList } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { useLinks, useCollections } from '../hooks/useCloudSync';
+import { useAuth } from '../contexts/AuthContext';
+import { useCollections, useLinks } from '../hooks/useCloudSync';
+import { Collection, Link } from '../types';
+import { supabase } from '../services/supabase';
+import { AutoCollectionService } from '../services/autoCollectionService';
 import { classifyContent } from '../services/aiService';
-import { Collection } from '../types';
+
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const isSmallScreen = SCREEN_WIDTH < 380;
@@ -44,6 +48,14 @@ export default function CollectionsScreen({ navigation }: CollectionsScreenProps
   const [newCollectionDescription, setNewCollectionDescription] = useState<string>('');
   const [aiSuggestions, setAiSuggestions] = useState<{ name: string; description: string; category: string }[]>([]);
   const [smartCollections, setSmartCollections] = useState<MockCollection[]>([]);
+  const [smartSuggestions, setSmartSuggestions] = useState<Array<{
+    name: string;
+    description: string;
+    estimatedLinks: number;
+    confidence: number;
+    preview: string[];
+  }>>([]);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   
   const { links, getCategories } = useLinks();
@@ -356,6 +368,47 @@ export default function CollectionsScreen({ navigation }: CollectionsScreenProps
     }
   }, [links, getCategories, createCollection]);
 
+  const handleAISuggestionPress = useCallback(async (suggestion: {
+    name: string;
+    description: string;
+    category: string;
+  }): Promise<void> => {
+    try {
+      console.log('🎯 Creating AI suggested collection:', suggestion);
+      const { data, error } = await createCollection({
+        name: suggestion.name,
+        description: suggestion.description,
+      });
+      
+      if (error) {
+        throw error;
+      }
+      
+      Alert.alert('✨ Collection Created', `"${suggestion.name}" collection created successfully!`);
+    } catch (error) {
+      console.error('❌ Error creating AI suggestion collection:', error);
+      Alert.alert('Error', 'Failed to create collection');
+    }
+  }, [createCollection]);
+
+  const loadSmartSuggestions = useCallback(async (): Promise<void> => {
+    if (!user?.id || loadingSuggestions) return;
+    
+    try {
+      setLoadingSuggestions(true);
+      console.log('🧠 Loading smart collection suggestions...');
+      
+      const suggestions = await AutoCollectionService.getSmartCollectionSuggestions(user.id);
+      setSmartSuggestions(suggestions);
+      
+      console.log('✅ Loaded smart suggestions:', suggestions.length);
+    } catch (error) {
+      console.error('❌ Error loading smart suggestions:', error);
+    } finally {
+      setLoadingSuggestions(false);
+    }
+  }, [user?.id, loadingSuggestions]);
+
   const generateSmartDescription = useCallback((name: string): string => {
     const keywords = name.toLowerCase();
     
@@ -371,20 +424,6 @@ export default function CollectionsScreen({ navigation }: CollectionsScreenProps
       return `A curated collection of ${name.toLowerCase()} resources`;
     }
   }, []);
-
-  const handleAISuggestionPress = useCallback((suggestion: { name: string; description: string; category: string }) => {
-    setNewCollectionName(suggestion.name);
-    setNewCollectionDescription(suggestion.description);
-    
-    // Animate form appearance
-    setShowCreateForm(true);
-    Animated.spring(slideAnim, {
-      toValue: 0,
-      tension: 100,
-      friction: 8,
-      useNativeDriver: true,
-    }).start();
-  }, [slideAnim]);
 
   // Convert real collections to display format
   const convertToDisplayCollection = useCallback((collection: Collection): MockCollection => {
@@ -616,15 +655,18 @@ export default function CollectionsScreen({ navigation }: CollectionsScreenProps
                 <Text style={styles.suggestionTitle}>🤖 AI Suggestions</Text>
                 <View style={styles.suggestionGrid}>
                   <TouchableOpacity 
-                    style={styles.suggestionCard}
+                    style={[styles.suggestionCard, styles.learningCard]}
                     onPress={() => handleAISuggestionPress({
                       name: 'Learning Resources', 
                       description: 'Educational content and tutorials',
                       category: 'education'
                     })}
                   >
-                    <Ionicons name="school" size={20} color="#6366f1" />
+                    <View style={[styles.iconContainer, { backgroundColor: '#ddd6fe' }]}>
+                      <Ionicons name="school" size={24} color="#6366f1" />
+                    </View>
                     <Text style={styles.suggestionName}>Learning Resources</Text>
+                    <Text style={styles.suggestionDesc}>Educational content</Text>
                   </TouchableOpacity>
                   
                   <TouchableOpacity 
@@ -635,8 +677,11 @@ export default function CollectionsScreen({ navigation }: CollectionsScreenProps
                       category: 'design'
                     })}
                   >
-                    <Ionicons name="color-palette" size={20} color="#8b5cf6" />
+                    <View style={[styles.iconContainer, { backgroundColor: '#fce7f3' }]}>
+                      <Ionicons name="color-palette" size={24} color="#ec4899" />
+                    </View>
                     <Text style={styles.suggestionName}>Design Inspiration</Text>
+                    <Text style={styles.suggestionDesc}>UI/UX designs</Text>
                   </TouchableOpacity>
                   
                   <TouchableOpacity 
@@ -647,8 +692,11 @@ export default function CollectionsScreen({ navigation }: CollectionsScreenProps
                       category: 'development'
                     })}
                   >
-                    <Ionicons name="code-slash" size={20} color="#10b981" />
+                    <View style={[styles.iconContainer, { backgroundColor: '#d1fae5' }]}>
+                      <Ionicons name="code-slash" size={24} color="#10b981" />
+                    </View>
                     <Text style={styles.suggestionName}>Dev Tools</Text>
+                    <Text style={styles.suggestionDesc}>Programming resources</Text>
                   </TouchableOpacity>
                   
                   <TouchableOpacity 
@@ -659,8 +707,11 @@ export default function CollectionsScreen({ navigation }: CollectionsScreenProps
                       category: 'reading'
                     })}
                   >
-                    <Ionicons name="library" size={20} color="#f59e0b" />
+                    <View style={[styles.iconContainer, { backgroundColor: '#fef3c7' }]}>
+                      <Ionicons name="library" size={24} color="#f59e0b" />
+                    </View>
                     <Text style={styles.suggestionName}>Reading List</Text>
+                    <Text style={styles.suggestionDesc}>Articles & blogs</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -898,14 +949,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flex: 1,
   },
-  iconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
+
   linkCount: {
     fontSize: 11,
     color: '#6366f1',
@@ -970,5 +1014,83 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '500',
+  },
+  emptyStateActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 12,
+  },
+  aiSuggestionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#8b5cf6',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 8,
+    gap: 6,
+  },
+  aiSuggestionButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  aiSuggestionCards: {
+    marginTop: 32,
+    paddingHorizontal: 20,
+  },
+  suggestionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1f2937',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  suggestionGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    justifyContent: 'space-between',
+  },
+  suggestionCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: 20,
+    width: '48%',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 5,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    transform: [{ scale: 1 }],
+  },
+  suggestionName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1f2937',
+    marginTop: 12,
+    textAlign: 'center',
+  },
+  suggestionDesc: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  iconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  learningCard: {
+    borderLeftWidth: 3,
+    borderLeftColor: '#6366f1',
   },
 });

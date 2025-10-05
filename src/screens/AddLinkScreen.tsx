@@ -17,8 +17,8 @@ import * as Clipboard from 'expo-clipboard';
 import { extractOpenGraphData } from '../services/openGraphService';
 import { classifyContent } from '../services/aiService';
 import { useAuth } from '../contexts/AuthContext';
-import { useLinks } from '../hooks/useCloudSync';
-import { Link } from '../types';
+import { useLinks, useCollections } from '../hooks/useCloudSync';
+import { Link, Collection } from '../types';
 import { debugDatabaseConnection } from '../utils/debugDatabase';
 
 // Helper function to determine category from platform
@@ -132,10 +132,13 @@ interface LinkData extends Partial<Link> {
 export default function AddLinkScreen({ navigation }: AddLinkScreenProps): React.ReactElement {
   const { user } = useAuth();
   const { createLink } = useLinks();
+  const { collections, addLinkToCollection } = useCollections();
   const [url, setUrl] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
   const [notes, setNotes] = useState<string>('');
   const [customTags, setCustomTags] = useState<string>('');
+  const [selectedCollections, setSelectedCollections] = useState<string[]>([]);
+  const [showCollectionSelector, setShowCollectionSelector] = useState<boolean>(false);
 
   const handlePasteFromClipboard = async (): Promise<void> => {
     try {
@@ -146,6 +149,20 @@ export default function AddLinkScreen({ navigation }: AddLinkScreenProps): React
     } catch (error) {
       Alert.alert('Error', 'Failed to paste from clipboard');
     }
+  };
+
+  const toggleCollectionSelection = (collectionId: string): void => {
+    setSelectedCollections(prev => {
+      if (prev.includes(collectionId)) {
+        return prev.filter(id => id !== collectionId);
+      } else {
+        return [...prev, collectionId];
+      }
+    });
+  };
+
+  const handleCollectionSelectorToggle = (): void => {
+    setShowCollectionSelector(!showCollectionSelector);
   };
 
   const validateUrl = (url: string): boolean => {
@@ -228,9 +245,29 @@ export default function AddLinkScreen({ navigation }: AddLinkScreenProps): React
       }
 
       console.log('✅ Link saved successfully with ID:', data.id);
+
+      // Step 3: Add to selected collections if any
+      if (selectedCollections.length > 0) {
+        console.log(`📚 Adding link to ${selectedCollections.length} collections...`);
+        
+        for (const collectionId of selectedCollections) {
+          try {
+            await addLinkToCollection(parseInt(data.id), parseInt(collectionId));
+            console.log(`✅ Added link to collection ${collectionId}`);
+          } catch (collectionError) {
+            console.error(`❌ Failed to add link to collection ${collectionId}:`, collectionError);
+            // Don't fail the entire operation if collection assignment fails
+          }
+        }
+      }
+
+      const successMessage = selectedCollections.length > 0 
+        ? `Link saved successfully and added to ${selectedCollections.length} collection(s)!`
+        : 'Link saved successfully!';
+
       Alert.alert(
         'Success!',
-        'Link saved successfully',
+        successMessage,
         [
           {
             text: 'Add Another',
@@ -238,6 +275,7 @@ export default function AddLinkScreen({ navigation }: AddLinkScreenProps): React
               setUrl('');
               setNotes('');
               setCustomTags('');
+              setSelectedCollections([]);
             }
           },
           {
@@ -327,6 +365,80 @@ export default function AddLinkScreen({ navigation }: AddLinkScreenProps): React
           />
           <Text style={styles.helperText}>
             AI will automatically suggest tags, but you can add your own here
+          </Text>
+        </View>
+
+        {/* Collection Selection Section */}
+        <View style={styles.section}>
+          <TouchableOpacity 
+            style={styles.collectionSelectorHeader}
+            onPress={handleCollectionSelectorToggle}
+          >
+            <View style={styles.collectionHeaderLeft}>
+              <Ionicons name="folder-outline" size={20} color="#6366f1" />
+              <Text style={styles.sectionTitle}>Add to Collections</Text>
+            </View>
+            <View style={styles.collectionHeaderRight}>
+              {selectedCollections.length > 0 && (
+                <View style={styles.selectedCountBadge}>
+                  <Text style={styles.selectedCountText}>{selectedCollections.length}</Text>
+                </View>
+              )}
+              <Ionicons 
+                name={showCollectionSelector ? "chevron-up" : "chevron-down"} 
+                size={20} 
+                color="#6366f1"
+              />
+            </View>
+          </TouchableOpacity>
+          
+          {showCollectionSelector && (
+            <View style={styles.collectionList}>
+              {collections.length === 0 ? (
+                <View style={styles.noCollectionsMessage}>
+                  <Ionicons name="folder-outline" size={32} color="#9ca3af" />
+                  <Text style={styles.noCollectionsText}>No collections yet</Text>
+                  <Text style={styles.noCollectionsSubtext}>Create collections to organize your links</Text>
+                </View>
+              ) : (
+                collections.map((collection) => (
+                  <TouchableOpacity
+                    key={collection.id}
+                    style={[
+                      styles.collectionItem,
+                      selectedCollections.includes(collection.id) && styles.collectionItemSelected
+                    ]}
+                    onPress={() => toggleCollectionSelection(collection.id)}
+                  >
+                    <View style={styles.collectionInfo}>
+                      <Text style={[
+                        styles.collectionName,
+                        selectedCollections.includes(collection.id) && styles.collectionNameSelected
+                      ]}>
+                        {collection.name}
+                      </Text>
+                      {collection.description && (
+                        <Text style={styles.collectionDescription}>
+                          {collection.description}
+                        </Text>
+                      )}
+                    </View>
+                    <View style={[
+                      styles.collectionCheckbox,
+                      selectedCollections.includes(collection.id) && styles.collectionCheckboxSelected
+                    ]}>
+                      {selectedCollections.includes(collection.id) && (
+                        <Ionicons name="checkmark" size={16} color="white" />
+                      )}
+                    </View>
+                  </TouchableOpacity>
+                ))
+              )}
+            </View>
+          )}
+          
+          <Text style={styles.helperText}>
+            Select collections to organize this link. You can always change this later.
           </Text>
         </View>
 

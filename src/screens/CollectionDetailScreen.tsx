@@ -19,6 +19,7 @@ interface CollectionDetailScreenProps {
   route: {
     params: {
       collection: Collection;
+      links?: Link[]; // Optional real links passed from CollectionsScreen
     };
   };
   navigation: {
@@ -27,32 +28,39 @@ interface CollectionDetailScreenProps {
   };
 }
 
-interface MockLink extends Link {
-  platform: string;
-}
+
 
 export default function CollectionDetailScreen({ route, navigation }: CollectionDetailScreenProps): React.ReactElement {
-  const { collection } = route.params;
-  const [links, setLinks] = useState<MockLink[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
+  const { collection, links: passedLinks } = route.params;
+  const [links, setLinks] = useState<Link[]>([]);
+  const [loading, setLoading] = useState<boolean>(false);
   const { deleteCollection } = useCollections();
 
   useEffect(() => {
-    fetchCollectionLinks();
-  }, []);
+    // Use real links passed from CollectionsScreen if available
+    if (passedLinks && passedLinks.length > 0) {
+      console.log(`📋 Using ${passedLinks.length} real links for collection "${collection.name}"`);
+      setLinks(passedLinks);
+      setLoading(false);
+    } else {
+      // Fallback to fetching mock data
+      console.log(`⚠️ No real links found for collection "${collection.name}", using mock data`);
+      fetchCollectionLinks();
+    }
+  }, [passedLinks]);
 
   const fetchCollectionLinks = async (): Promise<void> => {
     try {
-      // Mock data for now - replace with actual Supabase query
-      const mockLinks: MockLink[] = [
+      // Fallback mock data when no real links are available
+      const mockLinks: Link[] = [
         {
           id: '1',
           title: 'React Native Navigation Guide',
           description: 'Complete guide to navigation in React Native apps',
           image_url: 'https://via.placeholder.com/300x200/6366f1/ffffff?text=Navigation',
-          url: 'https://example.com/navigation-guide',
-          platform: 'Website',
+          url: 'https://reactnative.dev/docs/navigation',
           tags: ['react-native', 'navigation'],
+          category: 'development',
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
           user_id: '1',
@@ -62,9 +70,9 @@ export default function CollectionDetailScreen({ route, navigation }: Collection
           title: 'Expo Development Workflow',
           description: 'Best practices for developing with Expo',
           image_url: 'https://via.placeholder.com/300x200/8b5cf6/ffffff?text=Expo',
-          url: 'https://example.com/expo-workflow',
-          platform: 'Medium',
+          url: 'https://docs.expo.dev/workflow/overview',
           tags: ['expo', 'development'],
+          category: 'development',
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
           user_id: '1',
@@ -74,9 +82,9 @@ export default function CollectionDetailScreen({ route, navigation }: Collection
           title: 'State Management in React Native',
           description: 'Redux, Context API, and modern state management',
           image_url: 'https://via.placeholder.com/300x200/10b981/ffffff?text=State',
-          url: 'https://example.com/state-management',
-          platform: 'YouTube',
+          url: 'https://redux.js.org/tutorials/essentials/part-1-overview-concepts',
           tags: ['react-native', 'redux', 'state'],
+          category: 'development',
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
           user_id: '1',
@@ -92,7 +100,7 @@ export default function CollectionDetailScreen({ route, navigation }: Collection
     }
   };
 
-  const handleLinkPress = (link: MockLink): void => {
+  const handleLinkPress = (link: Link): void => {
     navigation.navigate('LinkDetail', { link });
   };
 
@@ -162,30 +170,47 @@ export default function CollectionDetailScreen({ route, navigation }: Collection
     );
   };
 
-  const renderLink = ({ item }: { item: MockLink }): React.ReactElement => (
-    <TouchableOpacity
-      style={styles.linkCard}
-      onPress={() => handleLinkPress(item)}
-      activeOpacity={0.7}
-    >
-      {item.image_url && (
-        <Image source={{ uri: item.image_url }} style={styles.linkImage} />
-      )}
-      <View style={styles.linkContent}>
-        <Text style={styles.linkTitle} numberOfLines={2}>
-          {item.title}
-        </Text>
-        <Text style={styles.linkDescription} numberOfLines={2}>
-          {item.description}
-        </Text>
-        <View style={styles.linkMeta}>
-          <View style={styles.platformBadge}>
-            <Text style={styles.platformText}>{item.platform}</Text>
+  const renderLink = ({ item }: { item: Link }): React.ReactElement => {
+    // Extract domain from URL for platform info
+    const getPlatform = (url: string): string => {
+      try {
+        const domain = new URL(url).hostname.replace('www.', '');
+        return domain.charAt(0).toUpperCase() + domain.slice(1);
+      } catch {
+        return 'Link';
+      }
+    };
+
+    return (
+      <TouchableOpacity
+        style={styles.linkCard}
+        onPress={() => handleLinkPress(item)}
+        activeOpacity={0.7}
+      >
+        {item.image_url && (
+          <Image source={{ uri: item.image_url }} style={styles.linkImage} />
+        )}
+        <View style={styles.linkContent}>
+          <Text style={styles.linkTitle} numberOfLines={2}>
+            {item.title || 'Untitled Link'}
+          </Text>
+          <Text style={styles.linkDescription} numberOfLines={2}>
+            {item.description || 'No description available'}
+          </Text>
+          <View style={styles.linkMeta}>
+            <View style={styles.platformBadge}>
+              <Text style={styles.platformText}>{getPlatform(item.url)}</Text>
+            </View>
+            {item.category && (
+              <View style={styles.categoryBadge}>
+                <Text style={styles.categoryText}>{item.category}</Text>
+              </View>
+            )}
           </View>
         </View>
-      </View>
-    </TouchableOpacity>
-  );
+      </TouchableOpacity>
+    );
+  };
 
   if (loading) {
     return (
@@ -326,7 +351,13 @@ export default function CollectionDetailScreen({ route, navigation }: Collection
                 </View>
                 <View style={styles.statItem}>
                   <Text style={styles.statNumber}>
-                    {[...new Set(links.map(link => link.platform))].length}
+                    {[...new Set(links.map(link => {
+                      try {
+                        return new URL(link.url).hostname.replace('www.', '');
+                      } catch {
+                        return 'unknown';
+                      }
+                    }))].length}
                   </Text>
                   <Text style={styles.statLabel}>Platforms</Text>
                 </View>
@@ -527,6 +558,18 @@ const styles = StyleSheet.create({
   platformText: {
     fontSize: 8,
     color: '#6366f1',
+    fontWeight: '500',
+  },
+  categoryBadge: {
+    backgroundColor: '#f0fdf4',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginLeft: 6,
+  },
+  categoryText: {
+    fontSize: 8,
+    color: '#16a34a',
     fontWeight: '500',
   },
   statsCard: {

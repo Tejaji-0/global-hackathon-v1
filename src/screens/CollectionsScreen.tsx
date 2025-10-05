@@ -34,6 +34,7 @@ interface MockCollection extends Collection {
   linkCount: number;
   icon: string;
   isPublic: boolean;
+  category?: string;
 }
 
 export default function CollectionsScreen({ navigation }: CollectionsScreenProps): React.ReactElement {
@@ -165,15 +166,43 @@ export default function CollectionsScreen({ navigation }: CollectionsScreenProps
 
   const loadCollectionsFromCategories = () => {
     const categories = getCategories();
-    const mockCollectionsFromData: MockCollection[] = categories.map((category, index) => {
+    const realCollectionsFromData: MockCollection[] = categories.map((category, index) => {
       const categoryLinks = links.filter(link => link.category === category);
-      const colors = ['#6366f1', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#8b5cf6'];
+      const colors = ['#6366f1', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#ec4899'];
       const icons = ['grid', 'code-slash', 'color-palette', 'bulb', 'rocket', 'library', 'star'];
       
+      // Generate more descriptive descriptions based on category
+      const getDescription = (cat: string, count: number) => {
+        switch (cat.toLowerCase()) {
+          case 'development':
+          case 'coding':
+          case 'programming':
+            return `${count} development resources and coding tutorials`;
+          case 'design':
+          case 'ui':
+          case 'ux':
+            return `${count} design inspiration and UI/UX resources`;
+          case 'business':
+          case 'work':
+            return `${count} business tools and professional resources`;
+          case 'learning':
+          case 'education':
+            return `${count} educational content and learning materials`;
+          case 'entertainment':
+          case 'fun':
+            return `${count} entertainment and fun content`;
+          case 'news':
+          case 'articles':
+            return `${count} news articles and reading materials`;
+          default:
+            return `${count} ${category} links and resources`;
+        }
+      };
+      
       return {
-        id: String(index + 1),
+        id: `category_${category}`,
         name: category.charAt(0).toUpperCase() + category.slice(1),
-        description: `Collection of ${categoryLinks.length} ${category} links`,
+        description: getDescription(category, categoryLinks.length),
         linkCount: categoryLinks.length,
         color: colors[index % colors.length],
         icon: icons[index % icons.length],
@@ -181,10 +210,12 @@ export default function CollectionsScreen({ navigation }: CollectionsScreenProps
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         user_id: '1',
+        category: category, // Add category for easier filtering
       };
-    });
+    }).filter(collection => collection.linkCount > 0); // Only show collections with links
 
-    setCollections(mockCollectionsFromData);
+    console.log(`📚 Loaded ${realCollectionsFromData.length} collections from real data`);
+    setCollections(realCollectionsFromData);
   };
 
   const onRefresh = (): void => {
@@ -270,7 +301,29 @@ export default function CollectionsScreen({ navigation }: CollectionsScreenProps
   );
 
   const handleCollectionPress = (collection: MockCollection): void => {
-    navigation.navigate('CollectionDetail', { collection });
+    // Get real links for this collection/category
+    const collectionLinks = links.filter(link => {
+      // If collection name matches a category, filter by category
+      const categoryName = collection.name.toLowerCase();
+      return link.category?.toLowerCase() === categoryName;
+    });
+
+    // Create collection object with real data
+    const collectionWithRealData = {
+      ...collection,
+      // Add real link count
+      linkCount: collectionLinks.length,
+      // Pass the actual links
+      links: collectionLinks,
+      // Add category for filtering
+      category: collection.name.toLowerCase(),
+    };
+
+    console.log(`🔗 Opening collection "${collection.name}" with ${collectionLinks.length} real links`);
+    navigation.navigate('CollectionDetail', { 
+      collection: collectionWithRealData,
+      links: collectionLinks // Pass links directly as well
+    });
   };
 
   const renderCollection = ({ item }: { item: MockCollection }): React.ReactElement => (
@@ -278,32 +331,29 @@ export default function CollectionsScreen({ navigation }: CollectionsScreenProps
       key={item.id}
       style={styles.collectionCard}
       onPress={() => handleCollectionPress(item)}
-      activeOpacity={0.9}
+      activeOpacity={0.7}
     >
-      <LinearGradient
-        colors={['#ffffff', '#f8fafc']}
-        style={styles.collectionGradient}
-      >
-        <View style={styles.collectionHeader}>
-          <LinearGradient
-            colors={[item.color, item.color + '80']}
-            style={styles.iconContainer}
-          >
-            <Ionicons name={item.icon as any} size={18} color="white" />
-          </LinearGradient>
-          <View style={styles.linkCountBadge}>
-            <Text style={styles.linkCount}>{item.linkCount}</Text>
-          </View>
+      <View style={styles.collectionHeader}>
+        <LinearGradient
+          colors={[item.color, item.color + '80']}
+          style={styles.iconContainer}
+        >
+          <Ionicons name={item.icon as any} size={20} color="white" />
+        </LinearGradient>
+        
+        <View style={styles.collectionInfo}>
+          <Text style={styles.collectionName} numberOfLines={1}>
+            {item.name}
+          </Text>
+          <Text style={styles.collectionDescription} numberOfLines={2}>
+            {item.description}
+          </Text>
         </View>
         
-        <Text style={styles.collectionName}>
-          {item.name}
-        </Text>
-        
-        <Text style={styles.collectionDescription}>
-          {item.description}
-        </Text>
-      </LinearGradient>
+        <View style={styles.linkCountBadge}>
+          <Text style={styles.linkCount}>{item.linkCount}</Text>
+        </View>
+      </View>
     </TouchableOpacity>
   );
 
@@ -314,7 +364,7 @@ export default function CollectionsScreen({ navigation }: CollectionsScreenProps
         <View style={styles.headerTop}>
           <Text style={styles.headerTitle}>Collections</Text>
           <TouchableOpacity onPress={handleCreateCollection} style={styles.addButton}>
-            <Ionicons name="add" size={24} color="#6366f1" />
+            <Ionicons name="add" size={20} color="white" />
           </TouchableOpacity>
         </View>
         
@@ -489,17 +539,23 @@ const styles = StyleSheet.create({
   },
   createForm: {
     backgroundColor: '#ffffff',
-    marginHorizontal: 20,
-    marginVertical: 10,
-    borderRadius: 16,
-    padding: 20,
+    marginHorizontal: 16,
+    marginVertical: 8,
+    borderRadius: 12,
+    padding: 16,
     borderWidth: 1,
     borderColor: '#e2e8f0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 3,
+      },
+    }),
   },
   formHeader: {
     flexDirection: 'row',
@@ -516,11 +572,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#e2e8f0',
     borderRadius: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 16,
+    paddingHorizontal: 12,
+    paddingVertical: isSmallScreen ? 10 : 12,
+    fontSize: isSmallScreen ? 14 : 16,
     marginBottom: 12,
     backgroundColor: '#f8fafc',
+    color: '#1e293b',
   },
   textArea: {
     height: 80,
@@ -634,8 +691,13 @@ const styles = StyleSheet.create({
   },
   emptyState: {
     alignItems: 'center',
-    paddingVertical: 60,
+    paddingVertical: isSmallScreen ? 40 : 60,
     paddingHorizontal: 20,
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    marginHorizontal: 16,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
   },
   emptyStateTitle: {
     fontSize: 20,

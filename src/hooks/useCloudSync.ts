@@ -1,8 +1,24 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { CloudSyncService } from '../services/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Link, Collection, CloudSyncResult } from '../types';
+
+// Sync configuration constants
+const SYNC_THROTTLE_MS = 30000; // 30 seconds between syncs
+const SYNC_DEBOUNCE_MS = 2000; // 2 seconds debounce
+
+// Debounce utility function
+const debounce = <T extends (...args: any[]) => any>(
+  func: T,
+  delay: number
+): ((...args: Parameters<T>) => void) => {
+  let timeoutId: ReturnType<typeof setTimeout>;
+  return (...args: Parameters<T>) => {
+    clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => func(...args), delay);
+  };
+};
 
 interface UseLinksReturn {
   links: Link[];
@@ -24,15 +40,15 @@ interface UseCollectionsReturn {
   error: string | null;
   syncing: boolean;
   createCollection: (collectionData: Partial<Collection>) => Promise<CloudSyncResult<Collection>>;
-  updateCollection: (collectionId: number, collectionData: Partial<Collection>) => Promise<CloudSyncResult<Collection>>;
-  deleteCollection: (collectionId: number) => Promise<{ error: Error | null }>;
+    updateCollection: (collectionId: string, collectionData: Partial<Collection>) => Promise<{ data: Collection | null; error: Error | null }>;
+  deleteCollection: (collectionId: string) => Promise<{ error: Error | null }>;
   addLinkToCollection: (linkId: number, collectionId: number) => Promise<{ error: Error | null }>;
   removeLinkFromCollection: (linkId: number, collectionId: number) => Promise<{ error: Error | null }>;
   refreshCollections: () => Promise<void>;
 }
 
 interface PendingOperation {
-  id: number;
+  id: string | number;
   type: 'CREATE_LINK' | 'UPDATE_LINK' | 'DELETE_LINK' | 'CREATE_COLLECTION' | 'UPDATE_COLLECTION' | 'DELETE_COLLECTION';
   data?: any;
   timestamp: string;
@@ -52,11 +68,30 @@ export const useLinks = (): UseLinksReturn => {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState<boolean>(false);
+  
+  // Sync control variables
+  const [lastSyncTime, setLastSyncTime] = useState<number>(0);
+  const [syncInProgress, setSyncInProgress] = useState<boolean>(false);
 
-  // Load links from cache first, then sync with cloud
-  const loadLinks = useCallback(async (): Promise<void> => {
+  // Load links from cache first, then sync with cloud (with throttling)
+  const loadLinks = useCallback(async (forceSync: boolean = false): Promise<void> => {
     if (!user) return;
 
+    const now = Date.now();
+    
+    // Check if sync is already in progress
+    if (syncInProgress && !forceSync) {
+      console.log('🚫 Sync already in progress, skipping...');
+      return;
+    }
+
+    // Check throttle limit (unless forced)
+    if (!forceSync && (now - lastSyncTime) < SYNC_THROTTLE_MS) {
+      console.log('⏱️ Sync throttled, last sync was', Math.round((now - lastSyncTime) / 1000), 'seconds ago');
+      return;
+    }
+
+    setSyncInProgress(true);
     setLoading(true);
     setError(null);
 
@@ -64,27 +99,36 @@ export const useLinks = (): UseLinksReturn => {
       // Load from cache first for better UX
       const cachedLinks = await AsyncStorage.getItem(`links_${user.id}`);
       if (cachedLinks) {
-        setLinks(JSON.parse(cachedLinks));
+        const parsed = JSON.parse(cachedLinks);
+        setLinks(parsed);
+        console.log('📱 Loaded', parsed.length, 'links from cache');
       }
 
-      // Then sync with cloud
+      // Then sync with cloud (with throttling)
+      console.log('☁️ Starting cloud sync...');
       setSyncing(true);
       const { data, error: syncError } = await CloudSyncService.syncLinks(user.id);
       
       if (syncError) {
         setError(syncError.message);
+        console.error('❌ Sync error:', syncError.message);
       } else if (data) {
         setLinks(data);
+        setLastSyncTime(now);
         // Cache the synced data
         await AsyncStorage.setItem(`links_${user.id}`, JSON.stringify(data));
+        console.log('✅ Synced', data.length, 'links successfully');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      setError(errorMessage);
+      console.error('❌ Load links error:', errorMessage);
     } finally {
       setLoading(false);
       setSyncing(false);
+      setSyncInProgress(false);
     }
-  }, [user]);
+  }, [user, lastSyncTime, syncInProgress]);
 
   // Create a new link
   const createLink = useCallback(async (linkData: Partial<Link>): Promise<CloudSyncResult<Link>> => {
@@ -146,22 +190,36 @@ export const useLinks = (): UseLinksReturn => {
   const deleteLink = useCallback(async (linkId: string): Promise<{ error: Error | null }> => {
     if (!user) throw new Error('User not authenticated');
 
+    console.log('🗑️ Deleting link with ID:', linkId);
+    console.log('📋 Current links count:', links.length);
+
     setError(null);
+    
+    // Optimistic update - immediately remove from UI
+    const originalLinks = links;
+    const optimisticLinks = links.filter(link => link.id !== linkId);
+    console.log('⚡ Optimistic update: removing from UI immediately');
+    setLinks(optimisticLinks);
+    
     try {
       const { error: deleteError } = await CloudSyncService.deleteLink(linkId, user.id);
       
       if (deleteError) {
+        console.error('❌ Delete error from service, reverting optimistic update:', deleteError);
+        // Revert optimistic update on error
+        setLinks(originalLinks);
         throw deleteError;
       }
 
-      const updatedLinks = links.filter(link => link.id !== linkId);
-      setLinks(updatedLinks);
-      // Update cache
-      await AsyncStorage.setItem(`links_${user.id}`, JSON.stringify(updatedLinks));
+      console.log('✅ Service deletion confirmed, optimistic update was correct');
+      // Update cache with confirmed deletion
+      await AsyncStorage.setItem(`links_${user.id}`, JSON.stringify(optimisticLinks));
+      console.log('💾 Cache updated successfully');
 
       return { error: null };
     } catch (err) {
       const error = err instanceof Error ? err : new Error('Unknown error');
+      console.error('❌ Delete link error:', error);
       setError(error.message);
       return { error };
     }
@@ -197,30 +255,51 @@ export const useLinks = (): UseLinksReturn => {
     return Array.from(categories);
   }, [links]);
 
-  // Load links when user changes
+  // Debounced refresh function to prevent excessive syncing
+  const debouncedRefresh = useCallback(
+    debounce(() => {
+      console.log('🔄 Debounced refresh triggered');
+      loadLinks(false);
+    }, SYNC_DEBOUNCE_MS),
+    [loadLinks]
+  );
+
+  // Manual refresh function (forces sync)
+  const refreshLinks = useCallback(async (): Promise<void> => {
+    console.log('🔄 Manual refresh requested');
+    await loadLinks(true); // Force sync on manual refresh
+  }, [loadLinks]);
+
+  // Load links when user changes (initial load only)
   useEffect(() => {
     if (user) {
-      loadLinks();
+      console.log('👤 User changed, performing initial sync');
+      loadLinks(true); // Force initial sync
     } else {
       setLinks([]);
       setError(null);
+      setLastSyncTime(0);
     }
-  }, [user, loadLinks]);
+  }, [user]); // Removed loadLinks dependency to prevent loops
 
-  // Set up real-time subscription
+  // Set up limited real-time subscription
   useEffect(() => {
     if (!user) return;
 
+    console.log('🔗 Setting up real-time subscription for user:', user.id);
+    
     const subscription = CloudSyncService.subscribeToLinks(user.id, (payload: any) => {
-      console.log('Real-time link update:', payload);
-      // Refresh links when changes occur
-      loadLinks();
+      console.log('📡 Real-time link update received:', payload.eventType);
+      
+      // Use debounced refresh to prevent excessive syncing
+      debouncedRefresh();
     });
 
     return () => {
+      console.log('🔌 Cleaning up real-time subscription');
       subscription.unsubscribe();
     };
-  }, [user, loadLinks]);
+  }, [user, debouncedRefresh]);
 
   return {
     links,
@@ -233,7 +312,7 @@ export const useLinks = (): UseLinksReturn => {
     searchLinks,
     filterByCategory,
     getCategories,
-    refreshLinks: loadLinks,
+    refreshLinks, // Now uses the manual refresh function
   };
 };
 
@@ -244,11 +323,30 @@ export const useCollections = (): UseCollectionsReturn => {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState<boolean>(false);
+  
+  // Sync control variables for collections
+  const [lastCollectionSyncTime, setLastCollectionSyncTime] = useState<number>(0);
+  const [collectionSyncInProgress, setCollectionSyncInProgress] = useState<boolean>(false);
 
-  // Load collections from cache first, then sync with cloud
-  const loadCollections = useCallback(async (): Promise<void> => {
+  // Load collections from cache first, then sync with cloud (with throttling)
+  const loadCollections = useCallback(async (forceSync: boolean = false): Promise<void> => {
     if (!user) return;
 
+    const now = Date.now();
+    
+    // Check if sync is already in progress
+    if (collectionSyncInProgress && !forceSync) {
+      console.log('🚫 Collection sync already in progress, skipping...');
+      return;
+    }
+
+    // Check throttle limit (unless forced)
+    if (!forceSync && (now - lastCollectionSyncTime) < SYNC_THROTTLE_MS) {
+      console.log('⏱️ Collection sync throttled, last sync was', Math.round((now - lastCollectionSyncTime) / 1000), 'seconds ago');
+      return;
+    }
+
+    setCollectionSyncInProgress(true);
     setLoading(true);
     setError(null);
 
@@ -256,27 +354,36 @@ export const useCollections = (): UseCollectionsReturn => {
       // Load from cache first
       const cachedCollections = await AsyncStorage.getItem(`collections_${user.id}`);
       if (cachedCollections) {
-        setCollections(JSON.parse(cachedCollections));
+        const parsed = JSON.parse(cachedCollections);
+        setCollections(parsed);
+        console.log('📱 Loaded', parsed.length, 'collections from cache');
       }
 
       // Then sync with cloud
+      console.log('☁️ Starting collections cloud sync...');
       setSyncing(true);
       const { data, error: syncError } = await CloudSyncService.syncCollections(user.id);
       
       if (syncError) {
         setError(syncError.message);
+        console.error('❌ Collections sync error:', syncError.message);
       } else if (data) {
         setCollections(data);
+        setLastCollectionSyncTime(now);
         // Cache the synced data
         await AsyncStorage.setItem(`collections_${user.id}`, JSON.stringify(data));
+        console.log('✅ Synced', data.length, 'collections successfully');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      setError(errorMessage);
+      console.error('❌ Load collections error:', errorMessage);
     } finally {
       setLoading(false);
       setSyncing(false);
+      setCollectionSyncInProgress(false);
     }
-  }, [user]);
+  }, [user, lastCollectionSyncTime, collectionSyncInProgress]);
 
   // Create a new collection
   const createCollection = useCallback(async (collectionData: Partial<Collection>): Promise<CloudSyncResult<Collection>> => {
@@ -306,7 +413,7 @@ export const useCollections = (): UseCollectionsReturn => {
   }, [user, collections]);
 
   // Update a collection
-  const updateCollection = useCallback(async (collectionId: number, collectionData: Partial<Collection>): Promise<CloudSyncResult<Collection>> => {
+  const updateCollection = useCallback(async (collectionId: string, collectionData: Partial<Collection>): Promise<CloudSyncResult<Collection>> => {
     if (!user) throw new Error('User not authenticated');
 
     setError(null);
@@ -335,25 +442,39 @@ export const useCollections = (): UseCollectionsReturn => {
   }, [user, collections]);
 
   // Delete a collection
-  const deleteCollection = useCallback(async (collectionId: number): Promise<{ error: Error | null }> => {
+  const deleteCollection = useCallback(async (collectionId: string): Promise<{ error: Error | null }> => {
     if (!user) throw new Error('User not authenticated');
 
+    console.log('🗑️ Deleting collection with ID:', collectionId);
+    console.log('📋 Current collections count:', collections.length);
+
     setError(null);
+    
+    // Optimistic update - immediately remove from UI
+    const originalCollections = collections;
+    const optimisticCollections = collections.filter(collection => collection.id !== collectionId);
+    console.log('⚡ Optimistic update: removing collection from UI immediately');
+    setCollections(optimisticCollections);
+    
     try {
       const { error: deleteError } = await CloudSyncService.deleteCollection(collectionId, user.id);
       
       if (deleteError) {
+        console.error('❌ Delete error from service, reverting optimistic update:', deleteError);
+        // Revert optimistic update on error
+        setCollections(originalCollections);
         throw deleteError;
       }
 
-      const updatedCollections = collections.filter(collection => collection.id !== collectionId);
-      setCollections(updatedCollections);
-      // Update cache
-      await AsyncStorage.setItem(`collections_${user.id}`, JSON.stringify(updatedCollections));
+      console.log('✅ Service deletion confirmed, optimistic update was correct');
+      // Update cache with confirmed deletion
+      await AsyncStorage.setItem(`collections_${user.id}`, JSON.stringify(optimisticCollections));
+      console.log('💾 Cache updated successfully');
 
       return { error: null };
     } catch (err) {
       const error = err instanceof Error ? err : new Error('Unknown error');
+      console.error('❌ Delete collection error:', error);
       setError(error.message);
       return { error };
     }
@@ -405,30 +526,51 @@ export const useCollections = (): UseCollectionsReturn => {
     }
   }, [user, loadCollections]);
 
-  // Load collections when user changes
+  // Debounced refresh for collections
+  const debouncedCollectionRefresh = useCallback(
+    debounce(() => {
+      console.log('🔄 Debounced collections refresh triggered');
+      loadCollections(false);
+    }, SYNC_DEBOUNCE_MS),
+    [loadCollections]
+  );
+
+  // Manual refresh function for collections
+  const refreshCollections = useCallback(async (): Promise<void> => {
+    console.log('🔄 Manual collections refresh requested');
+    await loadCollections(true); // Force sync on manual refresh
+  }, [loadCollections]);
+
+  // Load collections when user changes (initial load only)
   useEffect(() => {
     if (user) {
-      loadCollections();
+      console.log('👤 User changed, performing initial collections sync');
+      loadCollections(true); // Force initial sync
     } else {
       setCollections([]);
       setError(null);
+      setLastCollectionSyncTime(0);
     }
-  }, [user, loadCollections]);
+  }, [user]); // Removed loadCollections dependency to prevent loops
 
-  // Set up real-time subscription
+  // Set up limited real-time subscription for collections
   useEffect(() => {
     if (!user) return;
 
+    console.log('🔗 Setting up real-time subscription for collections');
+    
     const subscription = CloudSyncService.subscribeToCollections(user.id, (payload: any) => {
-      console.log('Real-time collection update:', payload);
-      // Refresh collections when changes occur
-      loadCollections();
+      console.log('📡 Real-time collection update received:', payload.eventType);
+      
+      // Use debounced refresh to prevent excessive syncing
+      debouncedCollectionRefresh();
     });
 
     return () => {
+      console.log('🔌 Cleaning up collections real-time subscription');
       subscription.unsubscribe();
     };
-  }, [user, loadCollections]);
+  }, [user, debouncedCollectionRefresh]);
 
   return {
     collections,
@@ -440,7 +582,7 @@ export const useCollections = (): UseCollectionsReturn => {
     deleteCollection,
     addLinkToCollection,
     removeLinkFromCollection,
-    refreshCollections: loadCollections,
+    refreshCollections, // Now uses the manual refresh function
   };
 };
 
@@ -473,19 +615,19 @@ export const useOfflineSync = (): UseOfflineSyncReturn => {
             await CloudSyncService.createLink(operation.data, user.id);
             break;
           case 'UPDATE_LINK':
-            await CloudSyncService.updateLink(operation.id, operation.data, user.id);
+            await CloudSyncService.updateLink(operation.id as string, operation.data, user.id);
             break;
           case 'DELETE_LINK':
-            await CloudSyncService.deleteLink(operation.id, user.id);
+            await CloudSyncService.deleteLink(operation.id as string, user.id);
             break;
           case 'CREATE_COLLECTION':
             await CloudSyncService.createCollection(operation.data, user.id);
             break;
           case 'UPDATE_COLLECTION':
-            await CloudSyncService.updateCollection(operation.id, operation.data, user.id);
+            await CloudSyncService.updateCollection(operation.id as string, operation.data, user.id);
             break;
           case 'DELETE_COLLECTION':
-            await CloudSyncService.deleteCollection(operation.id, user.id);
+            await CloudSyncService.deleteCollection(operation.id as string, user.id);
             break;
         }
       } catch (error) {

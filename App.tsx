@@ -38,27 +38,60 @@ import CollectionDetailScreen from './src/screens/CollectionDetailScreen';
 const Tab = createBottomTabNavigator<BottomTabParamList>();
 const Stack = createStackNavigator<RootStackParamList>();
 
-// Theme configuration
+// Modern Theme Configuration
 const theme = {
   colors: {
     primary: '#6366f1',
     secondary: '#8b5cf6',
+    accent: '#ec4899',
     success: '#10b981',
     warning: '#f59e0b',
     error: '#ef4444',
     text: '#1f2937',
-    background: '#ffffff',
-    surface: '#f9fafb',
+    textSecondary: '#64748b',
+    background: '#f8fafc',
+    surface: '#ffffff',
+    border: '#e2e8f0',
+  },
+  shadows: {
+    small: {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.1,
+      shadowRadius: 4,
+      elevation: 2,
+    },
+    medium: {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.15,
+      shadowRadius: 8,
+      elevation: 4,
+    },
+    large: {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: 0.2,
+      shadowRadius: 16,
+      elevation: 8,
+    },
   },
 };
 
-// Loading Screen Component
+// Modern Loading Screen Component with Animation
 const LoadingScreen = (): React.ReactElement => (
   <View style={styles.loadingContainer}>
-    <Ionicons name="link" size={60} color="#6366f1" />
+    <View style={styles.logoContainer}>
+      <View style={styles.logoBackground}>
+        <Ionicons name="link" size={60} color="white" />
+      </View>
+    </View>
     <Text style={styles.loadingTitle}>LinkHive</Text>
-    <ActivityIndicator size="large" color="#6366f1" style={styles.loader} />
-    <Text style={styles.loadingText}>Loading your links...</Text>
+    <Text style={styles.loadingSubtitle}>Your Digital Universe</Text>
+    <View style={styles.loadingIndicatorContainer}>
+      <ActivityIndicator size="large" color="#6366f1" style={styles.loader} />
+    </View>
+    <Text style={styles.loadingText}>Setting up your workspace...</Text>
   </View>
 );
 
@@ -85,17 +118,27 @@ function MainTabs(): React.ReactElement {
           return <Ionicons name={iconName as any} size={size} color={color} />;
         },
         tabBarActiveTintColor: theme.colors.primary,
-        tabBarInactiveTintColor: 'gray',
+        tabBarInactiveTintColor: theme.colors.textSecondary,
         headerShown: false,
         tabBarStyle: {
-          backgroundColor: 'white',
-          borderTopWidth: 1,
-          borderTopColor: '#e5e7eb',
-          elevation: 8,
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: -2 },
-          shadowOpacity: 0.1,
-          shadowRadius: 4,
+          backgroundColor: theme.colors.surface,
+          borderTopWidth: 0,
+          paddingBottom: 8,
+          paddingTop: 8,
+          height: 70,
+          borderRadius: 20,
+          marginHorizontal: 20,
+          marginBottom: 20,
+          position: 'absolute',
+          ...theme.shadows.medium,
+        },
+        tabBarLabelStyle: {
+          fontSize: 12,
+          fontWeight: '600',
+          marginTop: 4,
+        },
+        tabBarIconStyle: {
+          marginTop: 4,
         },
       })}
     >
@@ -190,27 +233,51 @@ export default function App(): React.ReactElement {
   );
 }
 
-// Styles
+// Modern Styles
 const styles = StyleSheet.create({
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f9fafb',
+    backgroundColor: theme.colors.background,
+    paddingHorizontal: 40,
+  },
+  logoContainer: {
+    marginBottom: 24,
+  },
+  logoBackground: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: theme.colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...theme.shadows.large,
   },
   loadingTitle: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#6366f1',
-    marginTop: 16,
-    marginBottom: 32,
+    fontSize: 36,
+    fontWeight: '800',
+    color: theme.colors.text,
+    marginBottom: 8,
+    letterSpacing: -0.5,
+  },
+  loadingSubtitle: {
+    fontSize: 16,
+    color: theme.colors.textSecondary,
+    marginBottom: 40,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  loadingIndicatorContainer: {
+    marginBottom: 24,
   },
   loader: {
-    marginBottom: 16,
+    transform: [{ scale: 1.2 }],
   },
   loadingText: {
     fontSize: 16,
-    color: '#6b7280',
+    color: theme.colors.textSecondary,
     textAlign: 'center',
+    fontWeight: '500',
   },
 });

@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as WebBrowser from 'expo-web-browser';
 import { Link } from '../types';
+import { useLinks } from '../hooks/useCloudSync';
 
 interface LinkDetailScreenProps {
   route: {
@@ -40,6 +41,7 @@ interface ActionButton {
 
 export default function LinkDetailScreen({ route, navigation }: LinkDetailScreenProps): React.ReactElement {
   const { link } = route.params;
+  const { deleteLink } = useLinks();
 
   const handleOpenLink = async (): Promise<void> => {
     try {
@@ -61,7 +63,15 @@ export default function LinkDetailScreen({ route, navigation }: LinkDetailScreen
   };
 
   const handleAddToCollection = (): void => {
-    Alert.alert('Coming Soon', 'Add to collection feature coming soon!');
+    Alert.alert(
+      'Add to Collection',
+      'Choose how to add this link to a collection:',
+      [
+        { text: 'Create New Collection', onPress: () => Alert.alert('Feature Coming Soon', 'Create collection feature will be available soon!') },
+        { text: 'Add to Existing', onPress: () => Alert.alert('Feature Coming Soon', 'Select existing collection feature will be available soon!') },
+        { text: 'Cancel', style: 'cancel' }
+      ]
+    );
   };
 
   const handleDeleteLink = (): void => {
@@ -73,9 +83,22 @@ export default function LinkDetailScreen({ route, navigation }: LinkDetailScreen
         { 
           text: 'Delete', 
           style: 'destructive',
-          onPress: () => {
-            // TODO: Implement delete functionality
-            navigation.goBack();
+          onPress: async () => {
+            console.log('🔘 Delete button pressed for link:', link.id, link.title);
+            try {
+              const result = await deleteLink(link.id);
+              console.log('📞 Delete result:', result);
+              if (result.error) {
+                console.error('❌ Delete failed with error:', result.error);
+                throw result.error;
+              }
+              console.log('✅ Delete successful, navigating back immediately');
+              // Navigate back immediately - optimistic update already removed it from UI
+              navigation.goBack();
+            } catch (error) {
+              console.error('❌ Error in delete handler:', error);
+              Alert.alert('Error', 'Failed to delete link. Please try again.');
+            }
           }
         }
       ]
@@ -125,7 +148,21 @@ export default function LinkDetailScreen({ route, navigation }: LinkDetailScreen
           <Text style={styles.headerTitle}>Link Details</Text>
           <TouchableOpacity
             style={styles.moreButton}
-            onPress={() => Alert.alert('Coming Soon', 'More options coming soon!')}
+            onPress={() => {
+              Alert.alert(
+                'Link Options',
+                'Choose an action',
+                [
+                  { text: 'Edit Notes', onPress: () => Alert.alert('Feature Coming Soon', 'Edit notes feature will be available soon!') },
+                  { text: 'Copy Link', onPress: () => {
+                    // TODO: Implement copy to clipboard
+                    Alert.alert('Link Copied', 'Link copied to clipboard');
+                  }},
+                  { text: 'View Source', onPress: handleOpenLink },
+                  { text: 'Cancel', style: 'cancel' }
+                ]
+              );
+            }}
           >
             <Ionicons name="ellipsis-horizontal" size={24} color="white" />
           </TouchableOpacity>

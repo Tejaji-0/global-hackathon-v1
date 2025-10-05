@@ -157,19 +157,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ navigation }) => {
     setEmailError('');
   };
 
-  const handleDemoLogin = async (): Promise<void> => {
-    setLoading(true);
-    setEmail('demo@linkhive.app');
-    setPassword('demo123');
-    
-    try {
-      await signIn('demo@linkhive.app', 'demo123');
-    } catch (error) {
-      console.log('Demo login - using mock authentication');
-    } finally {
-      setLoading(false);
-    }
-  };
+
 
   return (
     <KeyboardAvoidingView 
@@ -272,9 +260,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ navigation }) => {
               </Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.demoButton} onPress={handleDemoLogin}>
-              <Text style={styles.demoButtonText}>Try Demo Mode</Text>
-            </TouchableOpacity>
+
 
             <TouchableOpacity style={styles.toggleButton} onPress={toggleMode}>
               <Text style={styles.toggleButtonText}>
@@ -393,21 +379,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
   },
-  demoButton: {
-    backgroundColor: 'transparent',
-    borderWidth: 2,
-    borderColor: '#667eea',
-    borderRadius: 12,
-    height: 50,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 12,
-  },
-  demoButtonText: {
-    color: '#667eea',
-    fontSize: 16,
-    fontWeight: '600',
-  },
+
   toggleButton: {
     marginTop: 20,
     alignItems: 'center',

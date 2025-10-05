@@ -7,10 +7,14 @@ import {
   TouchableOpacity,
   Alert,
   RefreshControl,
+  TextInput,
+  Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { FlatList } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import { useLinks } from '../hooks/useCloudSync';
 import { Collection } from '../types';
 
 interface CollectionsScreenProps {
@@ -27,89 +31,90 @@ interface MockCollection extends Collection {
 
 export default function CollectionsScreen({ navigation }: CollectionsScreenProps): React.ReactElement {
   const [collections, setCollections] = useState<MockCollection[]>([]);
-  const [loading, setLoading] = useState<boolean>(false);
   const [refreshing, setRefreshing] = useState<boolean>(false);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [showCreateForm, setShowCreateForm] = useState<boolean>(false);
+  const [newCollectionName, setNewCollectionName] = useState<string>('');
+  const [newCollectionDescription, setNewCollectionDescription] = useState<string>('');
+  
+  const { links, getCategories } = useLinks();
+  const fadeAnim = new Animated.Value(0);
 
   useEffect(() => {
-    fetchCollections();
-  }, []);
+    loadCollectionsFromCategories();
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
+  }, [links]);
 
-  const fetchCollections = async (): Promise<void> => {
-    try {
-      // Mock data for now - replace with actual Supabase query
-      const mockCollections: MockCollection[] = [
-        {
-          id: 1,
-          name: 'React Native Resources',
-          description: 'Tutorials, documentation, and tools for React Native development',
-          linkCount: 15,
-          color: '#6366f1',
-          icon: 'code-slash',
-          isPublic: false,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          user_id: '1',
-        },
-        {
-          id: 2,
-          name: 'Design Inspiration',
-          description: 'Beautiful UI designs, color palettes, and creative ideas',
-          linkCount: 23,
-          color: '#8b5cf6',
-          icon: 'color-palette',
-          isPublic: true,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          user_id: '1',
-        },
-        {
-          id: 3,
-          name: 'AI & Machine Learning',
-          description: 'Latest developments in artificial intelligence and ML',
-          linkCount: 8,
-          color: '#10b981',
-          icon: 'brain',
-          isPublic: false,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          user_id: '1',
-        },
-        {
-          id: 4,
-          name: 'Productivity Tips',
-          description: 'Tools and techniques to boost productivity',
-          linkCount: 12,
-          color: '#f59e0b',
-          icon: 'rocket',
-          isPublic: true,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          user_id: '1',
-        },
-      ];
+  const loadCollectionsFromCategories = () => {
+    const categories = getCategories();
+    const mockCollectionsFromData: MockCollection[] = categories.map((category, index) => {
+      const categoryLinks = links.filter(link => link.category === category);
+      const colors = ['#6366f1', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#8b5cf6'];
+      const icons = ['grid', 'code-slash', 'color-palette', 'bulb', 'rocket', 'library', 'star'];
+      
+      return {
+        id: String(index + 1),
+        name: category.charAt(0).toUpperCase() + category.slice(1),
+        description: `Collection of ${categoryLinks.length} ${category} links`,
+        linkCount: categoryLinks.length,
+        color: colors[index % colors.length],
+        icon: icons[index % icons.length],
+        isPublic: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        user_id: '1',
+      };
+    });
 
-      setCollections(mockCollections);
-    } catch (error) {
-      console.error('Error fetching collections:', error);
-      Alert.alert('Error', 'Failed to fetch collections');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
+    setCollections(mockCollectionsFromData);
   };
 
   const onRefresh = (): void => {
     setRefreshing(true);
-    fetchCollections();
+    loadCollectionsFromCategories();
+    setRefreshing(false);
   };
 
   const handleCreateCollection = (): void => {
-    Alert.alert(
-      'Create Collection',
-      'Collection creation feature coming soon!',
-      [{ text: 'OK' }]
-    );
+    setShowCreateForm(true);
   };
+
+  const handleSaveCollection = async (): Promise<void> => {
+    if (newCollectionName.trim()) {
+      try {
+        // Create a new mock collection
+        const newCollection: MockCollection = {
+          id: String(collections.length + 1),
+          name: newCollectionName.trim(),
+          description: newCollectionDescription.trim() || `Custom collection`,
+          linkCount: 0,
+          color: '#6366f1',
+          icon: 'folder',
+          isPublic: false,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          user_id: '1',
+        };
+        
+        setCollections([...collections, newCollection]);
+        setNewCollectionName('');
+        setNewCollectionDescription('');
+        setShowCreateForm(false);
+        Alert.alert('Success', 'Collection created successfully!');
+      } catch (error) {
+        Alert.alert('Error', 'Failed to create collection');
+      }
+    }
+  };
+
+  const filteredCollections = collections.filter(collection =>
+    collection.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    collection.description.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   const handleCollectionPress = (collection: MockCollection): void => {
     navigation.navigate('CollectionDetail', { collection });
@@ -117,142 +122,127 @@ export default function CollectionsScreen({ navigation }: CollectionsScreenProps
 
   const renderCollection = ({ item }: { item: MockCollection }): React.ReactElement => (
     <TouchableOpacity
-      style={[styles.collectionCard, { borderLeftColor: item.color }]}
+      key={item.id}
+      style={styles.collectionCard}
       onPress={() => handleCollectionPress(item)}
-      activeOpacity={0.7}
+      activeOpacity={0.8}
     >
       <View style={styles.collectionHeader}>
         <View style={[styles.iconContainer, { backgroundColor: item.color }]}>
-          <Ionicons name={item.icon as any} size={20} color="white" />
+          <Ionicons name={item.icon as any} size={18} color="white" />
         </View>
-        <View style={styles.collectionMeta}>
-          <View style={styles.metaRow}>
-            <Text style={styles.linkCount}>{item.linkCount} links</Text>
-            {item.isPublic && (
-              <View style={styles.publicBadge}>
-                <Ionicons name="globe-outline" size={12} color="#10b981" />
-                <Text style={styles.publicText}>Public</Text>
-              </View>
-            )}
-          </View>
-        </View>
+        <Text style={styles.linkCount}>{item.linkCount}</Text>
       </View>
       
-      <Text style={styles.collectionName} numberOfLines={2}>
+      <Text style={styles.collectionName} numberOfLines={1}>
         {item.name}
       </Text>
       
-      <Text style={styles.collectionDescription} numberOfLines={3}>
+      <Text style={styles.collectionDescription} numberOfLines={2}>
         {item.description}
       </Text>
-      
-      <View style={styles.collectionFooter}>
-        <Text style={styles.createdDate}>
-          Created {new Date(item.created_at).toLocaleDateString()}
-        </Text>
-        <Ionicons name="chevron-forward" size={16} color="#6b7280" />
-      </View>
     </TouchableOpacity>
   );
 
   return (
     <View style={styles.container}>
-      <LinearGradient
-        colors={['#6366f1', '#8b5cf6']}
-        style={styles.header}
-      >
-        <View style={styles.headerContent}>
+      {/* Minimalistic Header */}
+      <View style={styles.header}>
+        <View style={styles.headerTop}>
           <Text style={styles.headerTitle}>Collections</Text>
-          <Text style={styles.headerSubtitle}>Organize your saved content</Text>
+          <TouchableOpacity onPress={handleCreateCollection} style={styles.addButton}>
+            <Ionicons name="add" size={24} color="#6366f1" />
+          </TouchableOpacity>
         </View>
-      </LinearGradient>
+        
+        {/* Search Bar */}
+        <View style={styles.searchContainer}>
+          <Ionicons name="search" size={20} color="#9ca3af" />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search collections..."
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholderTextColor="#9ca3af"
+          />
+        </View>
+      </View>
+
+      {/* Create Collection Form */}
+      {showCreateForm && (
+        <Animated.View style={[styles.createForm, { opacity: fadeAnim }]}>
+          <View style={styles.formHeader}>
+            <Text style={styles.formTitle}>New Collection</Text>
+            <TouchableOpacity onPress={() => setShowCreateForm(false)}>
+              <Ionicons name="close" size={24} color="#6b7280" />
+            </TouchableOpacity>
+          </View>
+          <TextInput
+            style={styles.formInput}
+            placeholder="Collection name"
+            value={newCollectionName}
+            onChangeText={setNewCollectionName}
+            autoFocus
+          />
+          <TextInput
+            style={[styles.formInput, styles.textArea]}
+            placeholder="Description (optional)"
+            value={newCollectionDescription}
+            onChangeText={setNewCollectionDescription}
+            multiline
+            numberOfLines={3}
+          />
+          <View style={styles.formActions}>
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={() => setShowCreateForm(false)}
+            >
+              <Text style={styles.cancelText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.saveButton}
+              onPress={handleSaveCollection}
+            >
+              <Text style={styles.saveText}>Create</Text>
+            </TouchableOpacity>
+          </View>
+        </Animated.View>
+      )}
 
       <ScrollView
         style={styles.content}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
+        showsVerticalScrollIndicator={false}
       >
-        {/* Quick Actions */}
-        <View style={styles.quickActions}>
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={handleCreateCollection}
-          >
-            <LinearGradient
-              colors={['#6366f1', '#8b5cf6']}
-              style={styles.actionButtonGradient}
-            >
-              <Ionicons name="add" size={20} color="white" />
-              <Text style={styles.actionButtonText}>New Collection</Text>
-            </LinearGradient>
-          </TouchableOpacity>
-          
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={() => navigation.navigate('Search')}
-          >
-            <View style={styles.actionButtonOutline}>
-              <Ionicons name="search-outline" size={20} color="#6366f1" />
-              <Text style={styles.actionButtonTextOutline}>Search</Text>
-            </View>
-          </TouchableOpacity>
-        </View>
-
-        {/* Collections Grid */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Your Collections</Text>
-            <Text style={styles.collectionCount}>{collections.length} total</Text>
-          </View>
-
-          {collections.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Ionicons name="library-outline" size={64} color="#d1d5db" />
-              <Text style={styles.emptyStateTitle}>No collections yet</Text>
-              <Text style={styles.emptyStateText}>
-                Create your first collection to organize your saved links
-              </Text>
+        {/* Collections List */}
+        {filteredCollections.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Ionicons name="folder-outline" size={48} color="#d1d5db" />
+            <Text style={styles.emptyStateTitle}>
+              {searchQuery ? 'No collections found' : 'No collections yet'}
+            </Text>
+            <Text style={styles.emptyStateText}>
+              {searchQuery 
+                ? 'Try adjusting your search terms'
+                : 'Create your first collection to organize your links'
+              }
+            </Text>
+            {!searchQuery && (
               <TouchableOpacity
                 style={styles.emptyStateButton}
                 onPress={handleCreateCollection}
               >
                 <Text style={styles.emptyStateButtonText}>Create Collection</Text>
               </TouchableOpacity>
-            </View>
-          ) : (
-            <FlatList
-              data={collections}
-              style={styles.collectionsGrid}
-              renderItem={renderCollection}
-              keyExtractor={(item) => item.id.toString()}
-              numColumns={2}
-              columnWrapperStyle={styles.row}
-              scrollEnabled={false}
-            />
-          )}
-        </View>
-
-        {/* Featured/Public Collections */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Discover Collections</Text>
-            <TouchableOpacity>
-              <Text style={styles.seeAllText}>See all</Text>
-            </TouchableOpacity>
+            )}
           </View>
-          
-          <View style={styles.discoverCard}>
-            <Ionicons name="compass-outline" size={24} color="#6366f1" />
-            <View style={styles.discoverContent}>
-              <Text style={styles.discoverTitle}>Explore Public Collections</Text>
-              <Text style={styles.discoverText}>
-                Discover collections shared by other users and find new content
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color="#6b7280" />
+        ) : (
+          <View style={styles.collectionsContainer}>
+            {filteredCollections.map((collection) => renderCollection({ item: collection }))}
           </View>
-        </View>
+        )}
       </ScrollView>
     </View>
   );
@@ -261,225 +251,200 @@ export default function CollectionsScreen({ navigation }: CollectionsScreenProps
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f9fafb',
+    backgroundColor: '#ffffff',
   },
   header: {
-    paddingTop: 50,
-    paddingBottom: 20,
+    paddingTop: 60,
     paddingHorizontal: 20,
+    paddingBottom: 20,
+    backgroundColor: '#ffffff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
   },
-  headerContent: {
-    alignItems: 'center',
-  },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: 'white',
-    marginBottom: 4,
-  },
-  headerSubtitle: {
-    fontSize: 16,
-    color: 'rgba(255, 255, 255, 0.8)',
-  },
-  content: {
-    flex: 1,
-    padding: 16,
-  },
-  quickActions: {
-    flexDirection: 'row',
-    marginBottom: 24,
-    gap: 12,
-  },
-  actionButton: {
-    flex: 1,
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  actionButtonGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 12,
-  },
-  actionButtonOutline: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 12,
-    backgroundColor: 'white',
-    borderWidth: 1,
-    borderColor: '#6366f1',
-    borderRadius: 12,
-  },
-  actionButtonText: {
-    color: 'white',
-    fontSize: 14,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  actionButtonTextOutline: {
-    color: '#6366f1',
-    fontSize: 14,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  section: {
-    marginBottom: 24,
-  },
-  sectionHeader: {
+  headerTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 16,
   },
-  sectionTitle: {
-    fontSize: 20,
+  headerTitle: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: '#1e293b',
+    letterSpacing: -0.5,
+  },
+  addButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#f8fafc',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
+    color: '#1e293b',
+    marginLeft: 12,
+  },
+  createForm: {
+    backgroundColor: '#ffffff',
+    marginHorizontal: 20,
+    marginVertical: 10,
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  formHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  formTitle: {
+    fontSize: 18,
     fontWeight: '600',
-    color: '#1f2937',
+    color: '#1e293b',
   },
-  collectionCount: {
-    fontSize: 14,
-    color: '#6b7280',
+  formInput: {
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 16,
+    marginBottom: 12,
+    backgroundColor: '#f8fafc',
   },
-  seeAllText: {
-    fontSize: 14,
-    color: '#6366f1',
+  textArea: {
+    height: 80,
+    textAlignVertical: 'top',
+  },
+  formActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 12,
+    marginTop: 8,
+  },
+  cancelButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  cancelText: {
+    color: '#64748b',
+    fontSize: 16,
     fontWeight: '500',
   },
-  collectionsGrid: {
+  saveButton: {
+    backgroundColor: '#6366f1',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  saveText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  content: {
     flex: 1,
+    padding: 20,
+  },
+  collectionsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
   },
   collectionCard: {
-    backgroundColor: 'white',
-    borderRadius: 12,
+    width: '48%',
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
     padding: 16,
-    borderLeftWidth: 4,
-    elevation: 2,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.05,
     shadowRadius: 4,
+    elevation: 2,
   },
   collectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     marginBottom: 12,
   },
   iconContainer: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 32,
+    height: 32,
+    borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  collectionMeta: {
-    flex: 1,
-    alignItems: 'flex-end',
-  },
-  metaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
   linkCount: {
     fontSize: 12,
-    color: '#6b7280',
-    fontWeight: '500',
-  },
-  publicBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#ecfdf5',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 8,
-  },
-  publicText: {
-    fontSize: 10,
-    color: '#10b981',
-    fontWeight: '500',
-    marginLeft: 2,
+    color: '#64748b',
+    fontWeight: '600',
   },
   collectionName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1f2937',
-    marginBottom: 8,
+    color: '#1e293b',
+    marginBottom: 6,
   },
   collectionDescription: {
-    fontSize: 14,
-    color: '#6b7280',
-    lineHeight: 20,
-    marginBottom: 12,
-  },
-  collectionFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  createdDate: {
-    fontSize: 12,
-    color: '#9ca3af',
-  },
-  discoverCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 16,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  discoverContent: {
-    flex: 1,
-    marginLeft: 12,
-    marginRight: 8,
-  },
-  discoverTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1f2937',
-    marginBottom: 4,
-  },
-  discoverText: {
-    fontSize: 14,
-    color: '#6b7280',
+    fontSize: 13,
+    color: '#64748b',
     lineHeight: 18,
   },
   emptyState: {
     alignItems: 'center',
-    paddingVertical: 40,
+    paddingVertical: 60,
+    paddingHorizontal: 20,
   },
   emptyStateTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '600',
-    color: '#4b5563',
+    color: '#1e293b',
     marginTop: 16,
     marginBottom: 8,
   },
   emptyStateText: {
-    fontSize: 14,
-    color: '#6b7280',
+    fontSize: 16,
+    color: '#64748b',
     textAlign: 'center',
-    paddingHorizontal: 20,
-    marginBottom: 20,
+    lineHeight: 24,
+    marginBottom: 24,
   },
   emptyStateButton: {
     backgroundColor: '#6366f1',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
     borderRadius: 8,
   },
   emptyStateButtonText: {
-    color: 'white',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  row: {
-    justifyContent: 'space-around',
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '500',
   },
 });

@@ -51,7 +51,7 @@ class LinkHiveTestSuite {
       
       // Authentication Tests
       { name: 'Test Authentication Service', fn: this.testAuthService },
-      { name: 'Test Demo Login', fn: this.testDemoLogin },
+
       { name: 'Test Session Persistence', fn: this.testSessionPersistence },
       
       // Cloud Sync Tests
@@ -166,30 +166,7 @@ class LinkHiveTestSuite {
     this.log('AuthService methods available');
   }
 
-  async testDemoLogin() {
-    const { AuthService } = require('../src/services/supabase');
-    
-    try {
-      // Test demo login
-      const result = await AuthService.signInWithEmail('demo@linkhive.com', 'demo123');
-      
-      if (!result.user) {
-        throw new Error('Demo login failed - no user returned');
-      }
-      
-      this.log(`Demo login successful: ${result.user.email}`);
-      
-      // Test current user retrieval
-      const currentUser = await AuthService.getCurrentUser();
-      if (!currentUser) {
-        throw new Error('Current user not available after demo login');
-      }
-      
-    } catch (error) {
-      // In mock mode, this might fail - that's okay
-      this.log('Demo login test (mock mode might not support this)');
-    }
-  }
+
 
   async testSessionPersistence() {
     const sessionKey = 'linkhive_auth_session';

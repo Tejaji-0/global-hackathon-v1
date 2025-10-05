@@ -132,19 +132,7 @@ ANTHROPIC_API_KEY=your_anthropic_api_key
 
 ### Update Supabase Service
 
-Replace the mock configuration in `src/services/supabase.js`:
-
-```javascript
-// Replace this:
-const SUPABASE_URL = 'https://demo.supabase.co';
-const SUPABASE_ANON_KEY = 'demo-key';
-
-// With this:
-const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
-const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-
-// Remove or comment out the mock client section
-```
+The app is now configured to use environment variables automatically. Make sure your `.env` file contains the correct Supabase credentials.
 
 ## 6. Storage Setup (Optional)
 

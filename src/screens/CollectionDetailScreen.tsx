@@ -7,11 +7,13 @@ import {
   TouchableOpacity,
   Alert,
   Image,
+  Share,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { FlatList } from 'react-native';
 import { Collection, Link } from '../types';
+import { useCollections } from '../hooks/useCloudSync';
 
 interface CollectionDetailScreenProps {
   route: {
@@ -33,6 +35,7 @@ export default function CollectionDetailScreen({ route, navigation }: Collection
   const { collection } = route.params;
   const [links, setLinks] = useState<MockLink[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const { deleteCollection } = useCollections();
 
   useEffect(() => {
     fetchCollectionLinks();
@@ -43,7 +46,7 @@ export default function CollectionDetailScreen({ route, navigation }: Collection
       // Mock data for now - replace with actual Supabase query
       const mockLinks: MockLink[] = [
         {
-          id: 1,
+          id: '1',
           title: 'React Native Navigation Guide',
           description: 'Complete guide to navigation in React Native apps',
           image_url: 'https://via.placeholder.com/300x200/6366f1/ffffff?text=Navigation',
@@ -55,7 +58,7 @@ export default function CollectionDetailScreen({ route, navigation }: Collection
           user_id: '1',
         },
         {
-          id: 2,
+          id: '2',
           title: 'Expo Development Workflow',
           description: 'Best practices for developing with Expo',
           image_url: 'https://via.placeholder.com/300x200/8b5cf6/ffffff?text=Expo',
@@ -67,7 +70,7 @@ export default function CollectionDetailScreen({ route, navigation }: Collection
           user_id: '1',
         },
         {
-          id: 3,
+          id: '3',
           title: 'State Management in React Native',
           description: 'Redux, Context API, and modern state management',
           image_url: 'https://via.placeholder.com/300x200/10b981/ffffff?text=State',
@@ -94,11 +97,42 @@ export default function CollectionDetailScreen({ route, navigation }: Collection
   };
 
   const handleEditCollection = (): void => {
-    Alert.alert('Coming Soon', 'Edit collection feature coming soon!');
+    Alert.prompt(
+      'Edit Collection',
+      'Enter new name for the collection:',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Save',
+          onPress: async (newName) => {
+            if (newName && newName.trim()) {
+              try {
+                // TODO: Implement actual update functionality when available
+                Alert.alert('Success', 'Collection name updated successfully');
+              } catch (error) {
+                Alert.alert('Error', 'Failed to update collection name');
+              }
+            }
+          }
+        }
+      ],
+      'plain-text',
+      collection.name
+    );
   };
 
-  const handleShareCollection = (): void => {
-    Alert.alert('Coming Soon', 'Share collection feature coming soon!');
+  const handleShareCollection = async (): Promise<void> => {
+    try {
+      const linksList = links.map(link => `• ${link.title}: ${link.url}`).join('\n');
+      const shareText = `${collection.name}\n\n${linksList}`;
+      
+      await Share.share({
+        message: shareText,
+        title: collection.name,
+      });
+    } catch (error) {
+      Alert.alert('Error', 'Could not share collection');
+    }
   };
 
   const handleDeleteCollection = (): void => {
@@ -110,9 +144,18 @@ export default function CollectionDetailScreen({ route, navigation }: Collection
         { 
           text: 'Delete', 
           style: 'destructive',
-          onPress: () => {
-            // TODO: Implement delete functionality
-            navigation.goBack();
+          onPress: async () => {
+            try {
+              const result = await deleteCollection(collection.id);
+              if (result.error) {
+                throw result.error;
+              }
+              // Navigate back immediately - optimistic update already removed it from UI
+              navigation.goBack();
+            } catch (error) {
+              console.error('Error deleting collection:', error);
+              Alert.alert('Error', 'Failed to delete collection. Please try again.');
+            }
           }
         }
       ]

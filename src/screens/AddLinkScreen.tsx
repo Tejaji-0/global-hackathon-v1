@@ -21,6 +21,98 @@ import { useLinks } from '../hooks/useCloudSync';
 import { Link } from '../types';
 import { debugDatabaseConnection } from '../utils/debugDatabase';
 
+// Helper function to determine category from platform
+const determineCategoryFromPlatform = (platform: string): string => {
+  const platformCategories: Record<string, string> = {
+    'YouTube': 'video',
+    'Vimeo': 'video',
+    'TikTok': 'video',
+    'Twitch': 'video',
+    'Instagram': 'social',
+    'Twitter': 'social',
+    'LinkedIn': 'professional',
+    'GitHub': 'development', 
+    'Medium': 'article',
+    'Pinterest': 'visual',
+    'Dribbble': 'design',
+    'Behance': 'design',
+    'Reddit': 'discussion',
+  };
+  
+  return platformCategories[platform] || 'general';
+};
+
+// Helper function to generate tags from content
+const generateTagsFromContent = (title: string, description: string, notes: string, platform: string): string[] => {
+  const tags: string[] = [];
+  
+  // Add platform tag
+  if (platform && platform !== 'Website') {
+    tags.push(platform.toLowerCase());
+  }
+  
+  // Combine all text content for analysis
+  const allText = `${title} ${description} ${notes}`.toLowerCase();
+  
+  // Define keyword-to-tag mappings
+  const tagMappings: Record<string, string[]> = {
+    'tutorial': ['tutorial', 'how to', 'guide', 'learn', 'course', 'lesson'],
+    'news': ['news', 'breaking', 'report', 'update', 'announcement'],
+    'entertainment': ['funny', 'comedy', 'entertainment', 'fun', 'meme', 'viral'],
+    'technology': ['tech', 'technology', 'coding', 'programming', 'software', 'ai', 'machine learning'],
+    'design': ['design', 'ui', 'ux', 'graphic', 'visual', 'typography', 'branding'],
+    'business': ['business', 'startup', 'entrepreneur', 'marketing', 'sales', 'finance'],
+    'health': ['health', 'fitness', 'medical', 'wellness', 'exercise', 'nutrition'],
+    'travel': ['travel', 'vacation', 'trip', 'destination', 'tourism'],
+    'food': ['food', 'recipe', 'cooking', 'restaurant', 'cuisine'],
+    'music': ['music', 'song', 'artist', 'album', 'playlist', 'concert'],
+    'sports': ['sports', 'football', 'basketball', 'soccer', 'baseball', 'hockey'],
+    'gaming': ['gaming', 'game', 'video game', 'esports', 'streaming'],
+    'education': ['education', 'school', 'university', 'academic', 'research'],
+    'science': ['science', 'research', 'study', 'experiment', 'discovery'],
+  };
+  
+  // Check for keyword matches
+  for (const [tag, keywords] of Object.entries(tagMappings)) {
+    if (keywords.some(keyword => allText.includes(keyword))) {
+      tags.push(tag);
+    }
+  }
+  
+  // Ensure we have at least one tag
+  if (tags.length === 0) {
+    tags.push('general');
+  }
+  
+  // Remove duplicates and limit to 5 tags
+  return [...new Set(tags)].slice(0, 5);
+};
+
+// Enhanced tag generation with AI classification
+const generateEnhancedTags = async (ogData: any, notes: string): Promise<string[]> => {
+  // Start with basic tags
+  const basicTags = generateTagsFromContent(ogData.title, ogData.description, notes, ogData.platform);
+  
+  try {
+    // Try to get AI-enhanced tags using the full OpenGraph data
+    console.log('🤖 Getting AI classification for content...');
+    const aiResult = await classifyContent(ogData);
+    
+    if (aiResult.success && aiResult.data.tags && aiResult.data.tags.length > 0) {
+      console.log('✅ AI tags generated:', aiResult.data.tags);
+      
+      // Combine basic tags with AI tags, removing duplicates
+      const combinedTags = [...basicTags, ...aiResult.data.tags];
+      return [...new Set(combinedTags)].slice(0, 5);
+    }
+  } catch (error) {
+    console.log('⚠️ AI classification failed, using basic tags:', error);
+  }
+  
+  // Fallback to basic tags
+  return basicTags;
+};
+
 interface AddLinkScreenProps {
   navigation: {
     goBack: () => void;
@@ -84,20 +176,47 @@ export default function AddLinkScreen({ navigation }: AddLinkScreenProps): React
     setLoading(true);
 
     try {
-      // Step 1: Prepare minimal link data
-      const basicLinkData: LinkData = {
-        url: url.trim(),
-        title: 'Link from ' + new Date().toLocaleString(),
-        description: notes.trim() || 'No description',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
+      // Step 1: Extract OpenGraph metadata from URL
+      console.log('🔍 Extracting metadata from URL...');
+      setLoading(true);
+      
+      const ogResult = await extractOpenGraphData(url.trim());
+      
+      let linkData: LinkData;
+      
+      if (ogResult.success && ogResult.data) {
+        console.log('✅ OpenGraph data extracted:', ogResult.data);
+        
+        // Use extracted metadata with user notes as fallback
+        linkData = {
+          url: url.trim(),
+          title: ogResult.data.title || 'Untitled Link',
+          description: notes.trim() || ogResult.data.description || 'No description',
+          image_url: ogResult.data.image || null,
+          favicon_url: `https://www.google.com/s2/favicons?domain=${ogResult.data.domain}&sz=32`,
+          category: determineCategoryFromPlatform(ogResult.data.platform),
+          tags: await generateEnhancedTags(ogResult.data, notes),
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+      } else {
+        console.log('⚠️ OpenGraph extraction failed, using basic data:', ogResult.error);
+        
+        // Fallback to basic data
+        linkData = {
+          url: url.trim(),
+          title: notes.trim() || 'Link from ' + new Date().toLocaleString(),
+          description: notes.trim() || 'No description',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+      }
 
-      console.log('Basic link data prepared:', basicLinkData);
+      console.log('📝 Final link data prepared:', linkData);
 
       // Step 2: Save to cloud database (now with automatic profile creation)
-      console.log('Attempting to save link...');
-      const { data, error } = await createLink(basicLinkData);
+      console.log('💾 Saving link to database...');
+      const { data, error } = await createLink(linkData);
       
       if (error) {
         console.error('❌ Save error details:', error);

@@ -84,6 +84,7 @@ export interface DatabaseError extends Error {
 // Navigation Types for Enhanced Routing
 export type RootStackParamList = {
   MainTabs: undefined;
+  AddLink: undefined;
   CollectionDetail: {
     collection: Collection;
   };
@@ -102,7 +103,6 @@ export type RootStackParamList = {
 export type BottomTabParamList = {
   Home: undefined;
   Search: undefined;
-  AddLink: undefined;
   Collections: undefined;
   Profile: undefined;
 };

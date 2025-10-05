@@ -3,118 +3,31 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import 'react-native-url-polyfill/auto';
 import { AuthResult, CloudSyncResult, Link, Collection, User, AuthUser } from '../types';
 
-// Use environment variables or fallback to demo values
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://demo.supabase.co';
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'demo-key';
+// Get environment variables - these are required for the app to work
+const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error('Missing Supabase environment variables. Please check your .env file and ensure EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY are set.');
+}
 
 // Debug logging to help with configuration
 console.log('🔧 Supabase Configuration:');
 console.log('   URL:', supabaseUrl);
 console.log('   Key:', supabaseAnonKey ? `${supabaseAnonKey.substring(0, 20)}...` : 'not set');
-console.log('   Mode:', supabaseUrl !== 'https://demo.supabase.co' ? 'PRODUCTION' : 'DEMO');
+console.log('   Mode: PRODUCTION');
 
-// Create a safe client that won't crash if credentials are missing
-let supabase: SupabaseClient;
-let isRealClient = false;
+// Create Supabase client
+const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    storage: AsyncStorage,
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: false,
+  },
+});
 
-try {
-  if (supabaseUrl !== 'https://demo.supabase.co' && supabaseAnonKey !== 'demo-key') {
-    supabase = createClient(supabaseUrl, supabaseAnonKey, {
-      auth: {
-        storage: AsyncStorage,
-        autoRefreshToken: true,
-        persistSession: true,
-        detectSessionInUrl: false,
-      },
-    });
-    isRealClient = true;
-  } else {
-    throw new Error('Demo credentials detected');
-  }
-} catch (error) {
-  console.log('ℹ️  LinkHive is running in DEMO MODE');
-  console.log('📱 All features are working with mock data');
-  console.log('🔧 To connect to real Supabase: Create .env file with your credentials');
-  console.log('📚 See SUPABASE_SETUP.md for complete setup instructions');
-  // Create a mock client for development
-  supabase = createMockClient() as unknown as SupabaseClient;
-  isRealClient = false;
-}
-
-// Mock client for development without real Supabase credentials
-function createMockClient() {
-  return {
-    from: (table: string) => ({
-      select: (query = '*') => Promise.resolve({ data: getMockData(table), error: null }),
-      insert: (data: any) => Promise.resolve({ data: [{ id: Date.now(), ...data }], error: null }),
-      update: (data: any) => Promise.resolve({ data: [data], error: null }),
-      delete: () => Promise.resolve({ data: null, error: null }),
-      eq: function(column: string, value: any) { return this; },
-      order: function(column: string, options?: any) { return this; },
-      range: function(from: number, to: number) { return this; },
-      single: function() { return this; },
-    }),
-    auth: {
-      signUp: ({ email, password }: { email: string; password: string }) => Promise.resolve({ 
-        data: { user: { id: 'mock-user-id', email }, session: { access_token: 'mock-token' } }, 
-        error: null 
-      }),
-      signInWithPassword: ({ email, password }: { email: string; password: string }) => Promise.resolve({ 
-        data: { user: { id: 'mock-user-id', email }, session: { access_token: 'mock-token' } }, 
-        error: null 
-      }),
-      signOut: () => Promise.resolve({ error: null }),
-      getSession: () => Promise.resolve({ 
-        data: { session: { user: { id: 'mock-user-id', email: 'demo@linkhive.app' } } }, 
-        error: null 
-      }),
-      onAuthStateChange: (callback: Function) => {
-        // Simulate initial auth state
-        setTimeout(() => callback('SIGNED_IN', { user: { id: 'mock-user-id', email: 'demo@linkhive.app' } }), 100);
-        return { data: { subscription: { unsubscribe: () => {} } } };
-      },
-    },
-    channel: () => ({
-      on: () => ({ subscribe: () => {} }),
-      subscribe: () => {},
-      unsubscribe: () => {},
-    }),
-  };
-}
-
-// Mock data for development
-function getMockData(table: string): any[] {
-  switch (table) {
-    case 'links':
-      return [
-        {
-          id: 1,
-          url: 'https://react-native.dev',
-          title: 'React Native Documentation',
-          description: 'Learn React Native development',
-          category: 'Development',
-          tags: ['react', 'mobile', 'development'],
-          created_at: new Date().toISOString(),
-          user_id: 'mock-user-id'
-        }
-      ];
-    case 'collections':
-      return [
-        {
-          id: 1,
-          name: 'Development Resources',
-          description: 'Useful development links',
-          color: '#007AFF',
-          created_at: new Date().toISOString(),
-          user_id: 'mock-user-id'
-        }
-      ];
-    default:
-      return [];
-  }
-}
-
-export { supabase, isRealClient };
+export { supabase };
 
 // Database table schemas
 export const TABLES = {
@@ -230,10 +143,6 @@ export class AuthService {
 export class CloudSyncService {
   static async syncLinks(userId: string): Promise<CloudSyncResult<Link[]>> {
     try {
-      if (!isRealClient) {
-        return { data: getMockData('links') as Link[], error: null };
-      }
-
       const { data, error } = await supabase
         .from(TABLES.LINKS)
         .select(`
@@ -256,10 +165,6 @@ export class CloudSyncService {
 
   static async syncCollections(userId: string): Promise<CloudSyncResult<Collection[]>> {
     try {
-      if (!isRealClient) {
-        return { data: getMockData('collections') as Collection[], error: null };
-      }
-
       const { data, error } = await supabase
         .from(TABLES.COLLECTIONS)
         .select(`
@@ -296,27 +201,27 @@ export class CloudSyncService {
         .eq('id', userId)
         .maybeSingle();
       
-      // If profile doesn't exist, create it  
+      // If profile doesn't exist, try to create it using RPC function
       if (!existingProfile && !profileError) {
-        console.log('🚀 Creating missing profile for user:', userId);
-        const profileData = {
-          id: userId,
-          email: user.email || '',
-          full_name: user.user_metadata?.fullName || user.user_metadata?.full_name || 'User',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        };
+        console.log('🚀 Profile missing for user:', userId);
+        console.log('🔄 Attempting to create profile using RPC function...');
         
-        const { error: insertError } = await supabase
-          .from('profiles')
-          .insert(profileData);
+        // Try to create profile using the RPC function that bypasses RLS
+        const { data: rpcResult, error: rpcError } = await supabase.rpc('create_user_profile', {
+          user_id: userId,
+          user_email: user.email || '',
+          user_full_name: user.user_metadata?.fullName || user.user_metadata?.full_name || 'User'
+        });
         
-        if (insertError) {
-          console.error('❌ Failed to create profile:', insertError);
-          return { data: null, error: new Error(`Profile creation failed: ${insertError.message}`) };
+        if (rpcError) {
+          console.error('❌ RPC profile creation failed:', rpcError);
+          return { 
+            data: null, 
+            error: new Error(`Profile creation failed. Please run the SQL fix in database/fix_profile_insert_policy.sql. Error: ${rpcError.message}`) 
+          };
         }
         
-        console.log('✅ Profile created successfully');
+        console.log('✅ Profile created successfully via RPC:', rpcResult);
       } else if (profileError) {
         console.error('❌ Profile check failed:', profileError);
         return { data: null, error: new Error(`Profile check failed: ${profileError.message}`) };
@@ -413,7 +318,7 @@ export class CloudSyncService {
   }
 
   static async updateCollection(
-    collectionId: number, 
+    collectionId: string, 
     collectionData: Partial<Collection>, 
     userId: string
   ): Promise<CloudSyncResult<Collection>> {
@@ -435,15 +340,27 @@ export class CloudSyncService {
     }
   }
 
-  static async deleteCollection(collectionId: number, userId: string): Promise<{ error: Error | null }> {
+  static async deleteCollection(collectionId: string, userId: string): Promise<{ error: Error | null }> {
     try {
-      const { error } = await supabase
+      // First delete all links in the collection
+      const { error: linksError } = await supabase
+        .from(TABLES.LINKS)
+        .delete()
+        .eq('collection_id', collectionId)
+        .eq('user_id', userId);
+
+      if (linksError) {
+        return { error: linksError as Error };
+      }
+
+      // Then delete the collection
+      const { error: collectionError } = await supabase
         .from(TABLES.COLLECTIONS)
         .delete()
         .eq('id', collectionId)
         .eq('user_id', userId);
 
-      return { error: error as Error | null };
+      return { error: collectionError as Error | null };
     } catch (error) {
       return { error: error as Error };
     }
@@ -509,11 +426,6 @@ export class CloudSyncService {
 
   // Real-time subscriptions
   static subscribeToLinks(userId: string, callback: Function) {
-    if (!isRealClient) {
-      // Mock real-time updates for development
-      return { unsubscribe: () => {} };
-    }
-
     const subscription = supabase
       .channel(`links:user_id=eq.${userId}`)
       .on('postgres_changes', {
@@ -530,11 +442,6 @@ export class CloudSyncService {
   }
 
   static subscribeToCollections(userId: string, callback: Function) {
-    if (!isRealClient) {
-      // Mock real-time updates for development
-      return { unsubscribe: () => {} };
-    }
-
     const subscription = supabase
       .channel(`collections:user_id=eq.${userId}`)
       .on('postgres_changes', {

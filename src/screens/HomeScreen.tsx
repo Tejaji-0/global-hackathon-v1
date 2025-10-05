@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,14 +9,15 @@ import {
   Image,
   Dimensions,
   ActivityIndicator,
+  Animated,
+  Easing,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { FlatList } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../contexts/AuthContext';
 import { useLinks } from '../hooks/useCloudSync';
-import { isRealClient } from '../services/supabase';
-import DebugInfo from '../components/DebugInfo';
 import { Link } from '../types';
 
 const { width } = Dimensions.get('window');
@@ -26,6 +27,27 @@ interface HomeScreenProps {
     navigate: (screen: string, params?: any) => void;
   };
 }
+
+// Helper function to get appropriate icon for category
+const getIconForCategory = (category?: string): keyof typeof Ionicons.glyphMap => {
+  const iconMap: Record<string, keyof typeof Ionicons.glyphMap> = {
+    'video': 'play-circle-outline',
+    'social': 'people-outline',
+    'article': 'document-text-outline',
+    'development': 'code-slash-outline',
+    'design': 'color-palette-outline',
+    'business': 'briefcase-outline',
+    'education': 'school-outline',
+    'entertainment': 'game-controller-outline',
+    'news': 'newspaper-outline',
+    'professional': 'business-outline',
+    'visual': 'image-outline',
+    'discussion': 'chatbubbles-outline',
+    'general': 'globe-outline',
+  };
+  
+  return iconMap[category || 'general'] || 'link-outline';
+};
 
 export default function HomeScreen({ navigation }: HomeScreenProps): React.ReactElement {
   const { user } = useAuth();
@@ -39,6 +61,11 @@ export default function HomeScreen({ navigation }: HomeScreenProps): React.React
   } = useLinks();
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
+  
+  // Animation values for modern UI
+  const fabScale = new Animated.Value(1);
+  const headerOpacity = new Animated.Value(1);
+  const cardScale = new Animated.Value(0.95);
 
   // Get filtered links based on selected category
   const filteredLinks = selectedCategory === 'All' 
@@ -47,10 +74,50 @@ export default function HomeScreen({ navigation }: HomeScreenProps): React.React
 
   const categories = ['All', ...getCategories()];
 
+  // Controlled refresh when screen comes into focus
+  useFocusEffect(
+    React.useCallback(() => {
+      console.log('🏠 HomeScreen focused');
+      
+      // Only refresh if we have very few links or it's been a while
+      const shouldRefresh = links.length === 0 || Date.now() - lastRefreshTime > 60000; // 1 minute
+      if (shouldRefresh) {
+        console.log('🔄 Performing focus refresh');
+        refreshLinks();
+        setLastRefreshTime(Date.now());
+      } else {
+        console.log('⏭️ Skipping focus refresh (recent data available)');
+      }
+      
+      // Animate cards entrance
+      Animated.spring(cardScale, {
+        toValue: 1,
+        useNativeDriver: true,
+        tension: 100,
+        friction: 8,
+      }).start();
+    }, [links.length, refreshLinks, cardScale])
+  );
+
+  // Track last manual refresh time
+  const [lastRefreshTime, setLastRefreshTime] = useState(0);
+
+  // Animate header on mount
+  useEffect(() => {
+    Animated.timing(headerOpacity, {
+      toValue: 1,
+      duration: 800,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [headerOpacity]);
+
   const onRefresh = async (): Promise<void> => {
+    console.log('🔄 Manual pull-to-refresh triggered');
     setRefreshing(true);
+    setLastRefreshTime(Date.now());
     try {
-      await refreshLinks();
+      await refreshLinks(); // This forces a sync
     } catch (error) {
       console.error('Error refreshing:', error);
     } finally {
@@ -63,7 +130,21 @@ export default function HomeScreen({ navigation }: HomeScreenProps): React.React
   };
 
   const handleAddLink = (): void => {
-    navigation.navigate('AddLink');
+    // Animate FAB press
+    Animated.sequence([
+      Animated.timing(fabScale, {
+        toValue: 0.9,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+      Animated.timing(fabScale, {
+        toValue: 1,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      navigation.navigate('AddLink');
+    });
   };
 
   const handleViewAllLinks = (): void => {
@@ -100,39 +181,44 @@ export default function HomeScreen({ navigation }: HomeScreenProps): React.React
   );
 
   const renderHeader = (): React.ReactElement => (
-    <View style={styles.header}>
+    <Animated.View style={[styles.header, { opacity: headerOpacity }]}>
       <LinearGradient
-        colors={['#667eea', '#764ba2']}
+        colors={['#6366f1', '#8b5cf6', '#ec4899']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
         style={styles.headerGradient}
       >
         <View style={styles.headerContent}>
           <View style={styles.headerTop}>
-            <View>
+            <View style={styles.welcomeContainer}>
               <Text style={styles.greeting}>
-                Welcome back{user?.email ? `, ${user.email.split('@')[0]}` : ''}!
+                Welcome back{user?.email ? `, ${user.email.split('@')[0]}` : ''}! 👋
               </Text>
               <Text style={styles.subtitle}>
-                Organize your digital world
+                Organize your digital world ✨
               </Text>
             </View>
-            <TouchableOpacity
-              style={styles.addButton}
-              onPress={handleAddLink}
-            >
-              <Ionicons name="add" size={24} color="white" />
-            </TouchableOpacity>
           </View>
           
           <View style={styles.statsContainer}>
             <View style={styles.statItem}>
+              <View style={styles.statIconContainer}>
+                <Ionicons name="bookmark" size={20} color="#6366f1" />
+              </View>
               <Text style={styles.statNumber}>{links.length}</Text>
               <Text style={styles.statLabel}>Links Saved</Text>
             </View>
             <View style={styles.statItem}>
+              <View style={styles.statIconContainer}>
+                <Ionicons name="grid" size={20} color="#8b5cf6" />
+              </View>
               <Text style={styles.statNumber}>{getCategories().length}</Text>
               <Text style={styles.statLabel}>Categories</Text>
             </View>
             <View style={styles.statItem}>
+              <View style={styles.statIconContainer}>
+                <Ionicons name="trending-up" size={20} color="#ec4899" />
+              </View>
               <Text style={styles.statNumber}>
                 {syncing ? '...' : (links.filter(l => new Date(l.created_at) > new Date(Date.now() - 7*24*60*60*1000)).length)}
               </Text>
@@ -141,18 +227,54 @@ export default function HomeScreen({ navigation }: HomeScreenProps): React.React
           </View>
         </View>
       </LinearGradient>
-    </View>
+    </Animated.View>
   );
 
-  const renderLink = ({ item }: { item: Link }): React.ReactElement => (
-    <TouchableOpacity
-      style={styles.linkCard}
-      onPress={() => handleLinkPress(item)}
-      activeOpacity={0.7}
+  const renderLink = ({ item, index }: { item: Link; index: number }): React.ReactElement => (
+    <Animated.View
+      style={[
+        styles.linkCardContainer,
+        {
+          transform: [{ scale: cardScale }],
+          opacity: cardScale,
+        },
+      ]}
     >
-      {item.image_url && (
-        <Image source={{ uri: item.image_url }} style={styles.linkImage} />
-      )}
+      <TouchableOpacity
+        style={styles.linkCard}
+        onPress={() => handleLinkPress(item)}
+        activeOpacity={0.8}
+      >
+      <View style={styles.linkImageContainer}>
+        {item.image_url ? (
+          <Image 
+            source={{ uri: item.image_url }} 
+            style={styles.linkImage}
+            onError={() => {
+              console.log('🖼️ Failed to load image for:', item.title);
+            }}
+          />
+        ) : (
+          <View style={styles.linkImagePlaceholder}>
+            <Ionicons 
+              name={getIconForCategory(item.category)} 
+              size={32} 
+              color="#6366f1" 
+            />
+          </View>
+        )}
+        {item.favicon_url && (
+          <View style={styles.faviconContainer}>
+            <Image 
+              source={{ uri: item.favicon_url }} 
+              style={styles.favicon}
+              onError={() => {
+                console.log('🌐 Failed to load favicon for:', item.title);
+              }}
+            />
+          </View>
+        )}
+      </View>
       <View style={styles.linkContent}>
         <Text style={styles.linkTitle} numberOfLines={2}>
           {item.title}
@@ -174,6 +296,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps): React.React
         </View>
       </View>
     </TouchableOpacity>
+    </Animated.View>
   );
 
   const renderEmpty = (): React.ReactElement => (
@@ -210,24 +333,9 @@ export default function HomeScreen({ navigation }: HomeScreenProps): React.React
     );
   }
 
-  const renderDemoBanner = (): React.ReactElement | null => {
-    if (isRealClient) return null;
-    
-    return (
-      <View style={styles.demoBanner}>
-        <Ionicons name="information-circle" size={16} color="#f59e0b" />
-        <Text style={styles.demoBannerText}>
-          Demo Mode - All features working with sample data
-        </Text>
-      </View>
-    );
-  };
-
   return (
     <View style={styles.container}>
       {renderHeader()}
-      {renderDemoBanner()}
-      <DebugInfo visible={__DEV__} />
       
       <ScrollView
         style={styles.content}
@@ -254,7 +362,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps): React.React
         ) : (
           <FlatList
             data={filteredLinks}
-            renderItem={renderLink}
+            renderItem={({ item, index }) => renderLink({ item, index })}
             keyExtractor={(item) => item.id.toString()}
             scrollEnabled={false}
             showsVerticalScrollIndicator={false}
@@ -269,6 +377,27 @@ export default function HomeScreen({ navigation }: HomeScreenProps): React.React
           </View>
         )}
       </ScrollView>
+      
+      {/* Modern Floating Action Button */}
+      <Animated.View
+        style={[
+          styles.fabContainer,
+          {
+            transform: [{ scale: fabScale }],
+          },
+        ]}
+      >
+        <TouchableOpacity style={styles.fab} onPress={handleAddLink} activeOpacity={0.8}>
+          <LinearGradient
+            colors={['#6366f1', '#8b5cf6']}
+            style={styles.fabGradient}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+          >
+            <Ionicons name="add" size={28} color="white" />
+          </LinearGradient>
+        </TouchableOpacity>
+      </Animated.View>
     </View>
   );
 }
@@ -276,73 +405,91 @@ export default function HomeScreen({ navigation }: HomeScreenProps): React.React
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f9fafb',
+    backgroundColor: '#f8fafc',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f9fafb',
+    backgroundColor: '#f8fafc',
   },
   loadingText: {
     marginTop: 16,
     fontSize: 16,
-    color: '#6b7280',
+    color: '#64748b',
+    fontWeight: '500',
   },
   header: {
     backgroundColor: 'transparent',
+    elevation: 0,
+    shadowOpacity: 0,
   },
   headerGradient: {
-    paddingTop: 50,
-    paddingBottom: 20,
+    paddingTop: 60,
+    paddingBottom: 30,
     paddingHorizontal: 20,
+    borderBottomLeftRadius: 30,
+    borderBottomRightRadius: 30,
   },
   headerContent: {
     flex: 1,
   },
   headerTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 20,
+    marginBottom: 24,
+  },
+  welcomeContainer: {
+    marginBottom: 4,
   },
   greeting: {
-    fontSize: 24,
-    fontWeight: 'bold',
+    fontSize: 28,
+    fontWeight: '700',
     color: 'white',
-    marginBottom: 4,
+    marginBottom: 6,
+    letterSpacing: -0.5,
   },
   subtitle: {
     fontSize: 16,
-    color: 'rgba(255, 255, 255, 0.8)',
-  },
-  addButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    borderRadius: 20,
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontWeight: '500',
+    letterSpacing: 0.3,
   },
   statsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 16,
-    padding: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderRadius: 20,
+    padding: 20,
+    marginTop: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
   },
   statItem: {
     alignItems: 'center',
   },
+  statIconContainer: {
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: 12,
+    padding: 8,
+    marginBottom: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
   statNumber: {
     fontSize: 24,
-    fontWeight: 'bold',
+    fontWeight: '800',
     color: 'white',
     marginBottom: 4,
   },
   statLabel: {
     fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.8)',
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   content: {
     flex: 1,
@@ -393,25 +540,62 @@ const styles = StyleSheet.create({
   },
   linksList: {
     paddingHorizontal: 20,
+    paddingBottom: 100,
+  },
+  linkCardContainer: {
+    marginBottom: 16,
   },
   linkCard: {
     backgroundColor: 'white',
-    borderRadius: 12,
-    marginBottom: 16,
+    borderRadius: 16,
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
-      height: 2,
+      height: 4,
     },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
     overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.02)',
+  },
+  linkImageContainer: {
+    position: 'relative',
+    width: '100%',
+    height: 120,
+    backgroundColor: '#f3f4f6',
   },
   linkImage: {
     width: '100%',
     height: 120,
     backgroundColor: '#f3f4f6',
+  },
+  linkImagePlaceholder: {
+    width: '100%',
+    height: 120,
+    backgroundColor: '#f8fafc',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+  },
+  faviconContainer: {
+    position: 'absolute',
+    bottom: 8,
+    right: 8,
+    backgroundColor: 'white',
+    borderRadius: 12,
+    padding: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  favicon: {
+    width: 16,
+    height: 16,
   },
   linkContent: {
     padding: 16,
@@ -531,23 +715,33 @@ const styles = StyleSheet.create({
     color: '#6b7280',
     marginLeft: 8,
   },
-  demoBanner: {
-    flexDirection: 'row',
+  
+  // Modern Floating Action Button Styles
+  fabContainer: {
+    position: 'absolute',
+    bottom: 110, // Adjusted to be above the floating tab bar (70px + 20px margin + 20px spacing)
+    right: 20,
+    zIndex: 9999, // Increased z-index to ensure it's above everything
+  },
+  fab: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    shadowColor: '#6366f1',
+    shadowOffset: {
+      width: 0,
+      height: 8,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 12, // Increased elevation for Android
+  },
+  fabGradient: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#fef3c7',
-    borderColor: '#f59e0b',
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    marginHorizontal: 20,
-    marginBottom: 12,
   },
-  demoBannerText: {
-    fontSize: 13,
-    color: '#92400e',
-    fontWeight: '500',
-    marginLeft: 6,
-    flex: 1,
-  },
+
 });
